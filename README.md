@@ -98,8 +98,8 @@ portfolio-optimizer/
 ### 1. Clone and Setup
 
 ```bash
-git clone <your-repo>
-cd portfolio-optimizer
+git clone Aporia
+cd Aporia
 ```
 
 ### 2. Start Database
