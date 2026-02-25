@@ -26,6 +26,9 @@ data/*.parquet
 data/*.pkl
 data/prices/
 
+# Frontend build output
+frontend/dist/
+
 # IDE
 .vscode/
 .idea/
