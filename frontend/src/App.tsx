@@ -3,21 +3,44 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { Session } from '@supabase/supabase-js'
 import type { DateSelectArg } from '@fullcalendar/core'
 import { supabase } from '@/lib/supabase'
-import { CalendarView } from '@/components/calendar/CalendarView'
 import { CourseSidebar } from '@/components/courses/CourseSidebar'
-import { TaskSidebar } from '@/components/tasks/TaskSidebar'
 import { EventModal } from '@/components/events/EventModal'
 import { TaskModal } from '@/components/tasks/TaskModal'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
+import { OverviewTab } from '@/components/tabs/OverviewTab'
+import { CalendarTab } from '@/components/tabs/CalendarTab'
+import { TasksTab } from '@/components/tabs/TasksTab'
+import { FocusTab } from '@/components/tabs/FocusTab'
+import { JournalTab } from '@/components/tabs/JournalTab'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { CalendarPlus, ListPlus, LogOut } from 'lucide-react'
+import {
+  CalendarPlus,
+  ListPlus,
+  LogOut,
+  LayoutDashboard,
+  Calendar,
+  CheckSquare,
+  Timer,
+  BookOpen,
+} from 'lucide-react'
 import type { Event, Task } from '@/types/database'
 
 const queryClient = new QueryClient()
 
+type Tab = 'overview' | 'calendar' | 'tasks' | 'focus' | 'journal'
+
+const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
+  { id: 'overview', label: 'Overview', icon: <LayoutDashboard className="size-4" /> },
+  { id: 'calendar', label: 'Calendar', icon: <Calendar className="size-4" /> },
+  { id: 'tasks', label: 'Tasks', icon: <CheckSquare className="size-4" /> },
+  { id: 'focus', label: 'Focus', icon: <Timer className="size-4" /> },
+  { id: 'journal', label: 'Journal', icon: <BookOpen className="size-4" /> },
+]
+
 function MainApp() {
+  const [activeTab, setActiveTab] = useState<Tab>('overview')
   const [eventModalOpen, setEventModalOpen] = useState(false)
   const [taskModalOpen, setTaskModalOpen] = useState(false)
   const [selectedEvent, setSelectedEvent] = useState<Event | undefined>()
@@ -67,38 +90,77 @@ function MainApp() {
 
   return (
     <div className="flex flex-col h-screen bg-background">
-      <header className="flex items-center gap-3 px-4 py-2 border-b shrink-0">
-        <span className="font-semibold text-lg tracking-tight mr-2">Aporia</span>
-        <Button size="sm" onClick={openNewEvent} variant="outline">
-          <CalendarPlus className="size-4 mr-1.5" />
-          Add Event
-        </Button>
-        <Button size="sm" onClick={openNewTask} variant="outline">
-          <ListPlus className="size-4 mr-1.5" />
-          Add Task
-        </Button>
-        <div className="ml-auto">
+      {/* Header */}
+      <header className="sticky top-0 z-50 flex items-center gap-3 px-4 h-14 border-b bg-background/80 backdrop-blur-sm shrink-0">
+        <span className="font-semibold text-lg tracking-tight mr-1">Aporia</span>
+
+        {/* Tab navigation */}
+        <nav className="flex items-center gap-1">
+          {TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                activeTab === tab.id
+                  ? 'bg-accent text-accent-foreground'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+              }`}
+            >
+              {tab.icon}
+              <span className="hidden sm:inline">{tab.label}</span>
+            </button>
+          ))}
+        </nav>
+
+        <div className="ml-auto flex items-center gap-2">
+          <Button size="sm" onClick={openNewEvent} variant="outline">
+            <CalendarPlus className="size-4 mr-1.5" />
+            <span className="hidden sm:inline">Add Event</span>
+          </Button>
+          <Button size="sm" onClick={openNewTask} variant="outline">
+            <ListPlus className="size-4 mr-1.5" />
+            <span className="hidden sm:inline">Add Task</span>
+          </Button>
           <Button size="sm" variant="ghost" onClick={handleSignOut}>
-            <LogOut className="size-4 mr-1.5" />
-            Sign out
+            <LogOut className="size-4" />
+            <span className="hidden sm:inline ml-1.5">Sign out</span>
           </Button>
         </div>
       </header>
 
+      {/* Body: persistent sidebar + tab content */}
       <div className="flex flex-1 overflow-hidden">
-        <aside className="w-56 shrink-0 border-r overflow-y-auto p-3 space-y-6">
+        {/* Courses sidebar — always visible */}
+        <aside className="w-52 shrink-0 border-r overflow-y-auto p-3">
           <CourseSidebar />
-          <TaskSidebar />
         </aside>
-        <main className="flex-1 overflow-hidden p-3">
-          <CalendarView
-            onDateSelect={handleDateSelect}
-            onEventClick={handleEventClick}
-            onTaskClick={handleTaskClick}
-          />
+
+        {/* Tab content */}
+        <main
+          className={`flex-1 overflow-auto ${
+            activeTab === 'calendar' ? 'p-3' : 'px-6 py-4'
+          }`}
+        >
+          {activeTab === 'overview' && (
+            <OverviewTab setActiveTab={setActiveTab} onTaskClick={handleTaskClick} />
+          )}
+          {activeTab === 'calendar' && (
+            <CalendarTab
+              onDateSelect={handleDateSelect}
+              onEventClick={handleEventClick}
+              onTaskClick={handleTaskClick}
+            />
+          )}
+          {activeTab === 'tasks' && (
+            <TasksTab onTaskClick={handleTaskClick} onNewTask={openNewTask} />
+          )}
+          {activeTab === 'focus' && <FocusTab />}
+          {activeTab === 'journal' && <JournalTab />}
         </main>
       </div>
 
+      {/* Modals — always mounted at root */}
       <EventModal
         open={eventModalOpen}
         onClose={() => setEventModalOpen(false)}
