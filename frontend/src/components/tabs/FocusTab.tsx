@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTasks } from '@/hooks/useTasks'
-import { useFocusSessions, useCreateFocusSession } from '@/hooks/useFocusSessions'
+import { useSubtasks } from '@/hooks/useSubtasks'
+import { useFocusSessions, useFocusSessionsByTask, useCreateFocusSession } from '@/hooks/useFocusSessions'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
@@ -14,30 +15,26 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Play, Pause, RotateCcw, Settings } from 'lucide-react'
 
-type Mode = 'focus' | 'short_break' | 'long_break'
+type Mode = 'focus' | 'break'
 
 const DEFAULT_DURATIONS: Record<Mode, number> = {
   focus: 25,
-  short_break: 5,
-  long_break: 15,
+  break: 5,
 }
 
 const MODE_LABELS: Record<Mode, string> = {
   focus: 'Focus',
-  short_break: 'Short Break',
-  long_break: 'Long Break',
+  break: 'Break',
 }
 
 const MODE_COLORS: Record<Mode, string> = {
-  focus: 'text-red-500',
-  short_break: 'text-green-500',
-  long_break: 'text-blue-500',
+  focus: 'text-emerald-700',
+  break: 'text-amber-700',
 }
 
 const MODE_BG: Record<Mode, string> = {
-  focus: 'bg-red-500',
-  short_break: 'bg-green-500',
-  long_break: 'bg-blue-500',
+  focus: 'bg-emerald-700',
+  break: 'bg-amber-700',
 }
 
 const PREFS_KEY = 'ordo_focus_durations'
@@ -66,35 +63,67 @@ export function FocusTab() {
   const [secondsLeft, setSecondsLeft] = useState(durations[mode] * 60)
   const [running, setRunning] = useState(false)
   const [selectedTaskId, setSelectedTaskId] = useState<string>('none')
+  const [selectedSubtaskId, setSelectedSubtaskId] = useState<string>('none')
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [timerVisible, setTimerVisible] = useState(true)
   const [draftDurations, setDraftDurations] = useState<Record<Mode, number>>(durations)
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const startTimeRef = useRef<number | null>(null)
+  // Refs to avoid stale closures in timer callbacks
+  const modeRef = useRef(mode)
+  const selectedTaskIdRef = useRef(selectedTaskId)
+  const selectedSubtaskIdRef = useRef(selectedSubtaskId)
+  const durationsRef = useRef(durations)
+  modeRef.current = mode
+  selectedTaskIdRef.current = selectedTaskId
+  selectedSubtaskIdRef.current = selectedSubtaskId
+  durationsRef.current = durations
+
   const totalSeconds = durations[mode] * 60
   const elapsed = totalSeconds - secondsLeft
   const progressPct = totalSeconds > 0 ? (elapsed / totalSeconds) * 100 : 0
 
-  // When mode changes, reset timer
+  function logSession(durationSeconds: number) {
+    if (durationSeconds < 5) return // don't log trivial sessions under 5s
+    createSession.mutate({
+      task_id: selectedTaskIdRef.current === 'none' ? null : selectedTaskIdRef.current,
+      subtask_id: selectedSubtaskIdRef.current === 'none' ? null : selectedSubtaskIdRef.current,
+      mode: modeRef.current,
+      duration_seconds: durationSeconds,
+    })
+    startTimeRef.current = null
+  }
+
+  // When mode changes, log partial session then reset
   function switchMode(newMode: Mode) {
+    if (newMode === mode) return
+    if (running && startTimeRef.current) {
+      const elapsedSec = Math.round((Date.now() - startTimeRef.current) / 1000)
+      logSession(elapsedSec)
+    }
     setRunning(false)
-    setMode(newMode)
-    setSecondsLeft(durations[newMode] * 60)
+    setTimerVisible(false)
+    setTimeout(() => {
+      setMode(newMode)
+      setSecondsLeft(durations[newMode] * 60)
+      setTimerVisible(true)
+    }, 150)
   }
 
   // Tick
   useEffect(() => {
     if (running) {
+      if (!startTimeRef.current) {
+        startTimeRef.current = Date.now()
+      }
       intervalRef.current = setInterval(() => {
         setSecondsLeft((s) => {
           if (s <= 1) {
             clearInterval(intervalRef.current!)
             setRunning(false)
-            // Save session
-            createSession.mutate({
-              task_id: selectedTaskId === 'none' ? null : selectedTaskId,
-              mode,
-              duration_seconds: durations[mode] * 60,
-            })
+            // Save full session
+            logSession(durationsRef.current[modeRef.current] * 60)
             return 0
           }
           return s - 1
@@ -108,7 +137,29 @@ export function FocusTab() {
     }
   }, [running]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Log partial session on unmount (e.g., navigating away from Focus tab)
+  useEffect(() => {
+    return () => {
+      if (startTimeRef.current) {
+        const elapsedSec = Math.round((Date.now() - startTimeRef.current) / 1000)
+        if (elapsedSec >= 5) {
+          createSession.mutate({
+            task_id: selectedTaskIdRef.current === 'none' ? null : selectedTaskIdRef.current,
+            subtask_id: selectedSubtaskIdRef.current === 'none' ? null : selectedSubtaskIdRef.current,
+            mode: modeRef.current,
+            duration_seconds: elapsedSec,
+          })
+        }
+        startTimeRef.current = null
+      }
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   function handleReset() {
+    if (running && startTimeRef.current) {
+      const elapsedSec = Math.round((Date.now() - startTimeRef.current) / 1000)
+      logSession(elapsedSec)
+    }
     setRunning(false)
     setSecondsLeft(durations[mode] * 60)
   }
@@ -133,18 +184,36 @@ export function FocusTab() {
   }
 
   const pendingTasks = tasks.filter((t) => t.status !== 'done')
+  const activeTaskId = selectedTaskId === 'none' ? undefined : selectedTaskId
+  const { data: subtasks = [] } = useSubtasks(activeTaskId)
+  const { subtaskMinutesMap } = useFocusSessionsByTask(activeTaskId)
+  const pendingSubtasks = subtasks.filter((s) => s.status !== 'complete')
+
+  // Selected subtask info
+  const selectedSubtask = selectedSubtaskId !== 'none'
+    ? subtasks.find((s) => s.id === selectedSubtaskId)
+    : undefined
+  const focusedMinutes = selectedSubtask ? (subtaskMinutesMap.get(selectedSubtask.id) ?? 0) : 0
+  const remainingMinutes = selectedSubtask ? Math.max(0, selectedSubtask.estimated_minutes - focusedMinutes) : 0
+  const subtaskProgressPct = selectedSubtask
+    ? Math.min(100, Math.round((focusedMinutes / selectedSubtask.estimated_minutes) * 100))
+    : 0
 
   return (
     <div className="max-w-lg mx-auto py-6 space-y-8">
       {/* Mode selector */}
       <div className="flex justify-center gap-2">
-        {(['focus', 'short_break', 'long_break'] as Mode[]).map((m) => (
+        {(['focus', 'break'] as Mode[]).map((m) => (
           <button
             key={m}
             type="button"
             onClick={() => switchMode(m)}
-            className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
-              mode === m ? 'bg-foreground text-background' : 'text-muted-foreground hover:bg-muted'
+            className={`px-6 py-2 rounded-full text-base font-medium transition-all duration-150 ${
+              mode === m
+                ? m === 'focus'
+                  ? 'bg-emerald-700 text-white'
+                  : 'bg-amber-700 text-white'
+                : 'bg-transparent text-muted-foreground hover:bg-muted'
             }`}
           >
             {MODE_LABELS[m]}
@@ -154,7 +223,7 @@ export function FocusTab() {
 
       {/* Timer display */}
       <div className="text-center space-y-4">
-        <div className={`text-8xl font-mono font-bold tabular-nums ${MODE_COLORS[mode]}`}>
+        <div className={`text-8xl font-serif font-bold tabular-nums transition-opacity duration-150 ${MODE_COLORS[mode]} ${timerVisible ? 'opacity-100' : 'opacity-0'}`}>
           {formatTime(secondsLeft)}
         </div>
 
@@ -165,6 +234,7 @@ export function FocusTab() {
             style={{ width: `${progressPct}%` }}
           />
         </div>
+
       </div>
 
       {/* Controls */}
@@ -179,11 +249,19 @@ export function FocusTab() {
         </Button>
         <Button
           size="lg"
-          onClick={() => setRunning((r) => !r)}
-          className={`w-16 h-16 rounded-full p-0 text-white ${
-            mode === 'focus' ? 'bg-red-500 hover:bg-red-600' :
-            mode === 'short_break' ? 'bg-green-500 hover:bg-green-600' :
-            'bg-blue-500 hover:bg-blue-600'
+          variant="outline"
+          onClick={() => {
+            if (running && startTimeRef.current) {
+              // Pausing — log partial session
+              const elapsedSec = Math.round((Date.now() - startTimeRef.current) / 1000)
+              logSession(elapsedSec)
+            }
+            setRunning((r) => !r)
+          }}
+          className={`w-16 h-16 rounded-full p-0 border-2 border-border transition-all duration-200 ${
+            running
+              ? 'scale-95 bg-muted/60 text-muted-foreground hover:scale-100'
+              : 'bg-background text-foreground hover:scale-110'
           }`}
         >
           {running ? <Pause className="size-6" /> : <Play className="size-6 ml-0.5" />}
@@ -203,7 +281,7 @@ export function FocusTab() {
               <DialogTitle>Timer Settings</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 pt-2">
-              {(['focus', 'short_break', 'long_break'] as Mode[]).map((m) => (
+              {(['focus', 'break'] as Mode[]).map((m) => (
                 <div key={m} className="flex items-center gap-4">
                   <Label className="w-32 text-sm">{MODE_LABELS[m]}</Label>
                   <Input
@@ -225,10 +303,36 @@ export function FocusTab() {
         </Dialog>
       </div>
 
+      {/* Subtask progress — shown when a subtask is selected */}
+      {selectedSubtask && (
+        <div className="rounded-lg border bg-card p-3 mx-4 text-left space-y-1.5">
+          <p className="text-sm font-medium">{selectedSubtask.title}</p>
+          <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all ${
+                subtaskProgressPct >= 100 ? 'bg-green-500' : 'bg-amber-500'
+              }`}
+              style={{ width: `${subtaskProgressPct}%` }}
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-muted-foreground">
+              {focusedMinutes}m focused of {selectedSubtask.estimated_minutes}m estimated
+            </p>
+            <p className={`text-xs font-semibold ${remainingMinutes === 0 ? 'text-green-500' : ''}`}>
+              {remainingMinutes > 0 ? `${remainingMinutes}m left` : 'Complete'}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Task selector */}
       <div className="space-y-2">
         <Label className="text-sm text-muted-foreground">Focusing on</Label>
-        <Select value={selectedTaskId} onValueChange={setSelectedTaskId}>
+        <Select
+          value={selectedTaskId}
+          onValueChange={(v) => { setSelectedTaskId(v); setSelectedSubtaskId('none') }}
+        >
           <SelectTrigger>
             <SelectValue placeholder="Select a task (optional)" />
           </SelectTrigger>
@@ -241,17 +345,48 @@ export function FocusTab() {
             ))}
           </SelectContent>
         </Select>
+
+        {/* Subtask selector — shown when a task with subtasks is selected */}
+        {selectedTaskId !== 'none' && subtasks.length > 0 && (
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Subtask</Label>
+            <Select
+              value={selectedSubtaskId}
+              onValueChange={setSelectedSubtaskId}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select a subtask" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No subtask selected</SelectItem>
+                {subtasks.map((s, i) => {
+                  const complete = s.status === 'complete'
+                  const unlocked = complete || subtasks.slice(0, i).every((prev) => prev.status === 'complete')
+                  return (
+                    <SelectItem
+                      key={s.id}
+                      value={s.id}
+                      disabled={!unlocked || complete}
+                    >
+                      {complete ? '\u2713 ' : !unlocked ? '\uD83D\uDD12 ' : ''}{s.title}
+                    </SelectItem>
+                  )
+                })}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-lg border bg-card p-4">
           <p className="text-xs text-muted-foreground mb-1">Sessions today</p>
-          <p className="text-2xl font-semibold text-red-500">{sessionsToday}</p>
+          <p className="text-2xl font-semibold">{sessionsToday}</p>
         </div>
         <div className="rounded-lg border bg-card p-4">
           <p className="text-xs text-muted-foreground mb-1">Focus minutes</p>
-          <p className="text-2xl font-semibold text-blue-500">{totalFocusMin}</p>
+          <p className="text-2xl font-semibold">{totalFocusMin}</p>
         </div>
       </div>
     </div>

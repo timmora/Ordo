@@ -4,7 +4,8 @@ import { useCourses } from '@/hooks/useCourses'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { ListPlus } from 'lucide-react'
+import { ListPlus, Sparkles } from 'lucide-react'
+import { useTasksWithSubtasks } from '@/hooks/useSubtasks'
 import type { Task } from '@/types/database'
 
 type FilterTab = 'all' | 'overdue' | 'this_week' | 'later'
@@ -13,6 +14,7 @@ type PriorityFilter = 'all' | 'high' | 'medium' | 'low'
 interface Props {
   onTaskClick: (task: Task) => void
   onNewTask: () => void
+  onDecompose?: (task: Task) => void
 }
 
 function priorityVariant(p: Task['priority']) {
@@ -28,9 +30,10 @@ const weekStr = () => {
   return d.toISOString().slice(0, 10)
 }
 
-export function TasksTab({ onTaskClick, onNewTask }: Props) {
+export function TasksTab({ onTaskClick, onNewTask, onDecompose }: Props) {
   const { data: tasks = [] } = useTasks()
   const { data: courses = [] } = useCourses()
+  const { data: decomposedTaskIds } = useTasksWithSubtasks()
   const updateTask = useUpdateTask()
 
   const [filterTab, setFilterTab] = useState<FilterTab>('all')
@@ -201,6 +204,16 @@ export function TasksTab({ onTaskClick, onNewTask }: Props) {
                   <Badge variant={priorityVariant(task.priority)} className="text-xs">
                     {task.priority}
                   </Badge>
+                  {onDecompose && !done && !decomposedTaskIds?.has(task.id) && (
+                    <button
+                      type="button"
+                      onClick={() => onDecompose(task)}
+                      className="p-1 text-muted-foreground hover:text-amber-500 transition-colors"
+                      title="Break it down"
+                    >
+                      <Sparkles className="size-3.5" />
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => onTaskClick(task)}

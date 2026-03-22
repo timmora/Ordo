@@ -5,6 +5,8 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-serif: 'Libre Baskerville', ui-serif, Georgia, serif;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -119,6 +121,58 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans;
   }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-serif);
+  }
+}
+
+/* FullCalendar toolbar overrides */
+.fc-custom .fc-button {
+  background: none !important;
+  border: 1px solid var(--border) !important;
+  color: var(--muted-foreground) !important;
+  box-shadow: none !important;
+  font-size: 0.875rem !important;
+  padding: 0.5rem 1rem !important;
+  border-radius: 0.5rem !important;
+  transition: color 0.15s, background-color 0.15s;
+}
+.fc-custom .fc-button:hover {
+  color: var(--foreground) !important;
+  background-color: var(--muted) !important;
+}
+.fc-custom .fc-button-active {
+  background-color: var(--foreground) !important;
+  color: var(--background) !important;
+  border-color: var(--foreground) !important;
+}
+/* Prev/next arrows — minimal gray chevrons */
+.fc-custom .fc-prev-button,
+.fc-custom .fc-next-button {
+  border: none !important;
+  padding: 0.25rem !important;
+  color: var(--muted-foreground) !important;
+  background: none !important;
+}
+.fc-custom .fc-prev-button:hover,
+.fc-custom .fc-next-button:hover {
+  color: var(--foreground) !important;
+  background: none !important;
+}
+/* Center chunk: prev / title / next in a row */
+.fc-custom .fc-toolbar-chunk:nth-child(2) {
+  display: flex !important;
+  align-items: center !important;
+  gap: 0.25rem;
+}
+/* Right button group spacing */
+.fc-custom .fc-toolbar-chunk:nth-child(3) .fc-button-group {
+  gap: 0.25rem;
+}
+.fc-custom .fc-toolbar-title {
+  width: 20rem !important;
+  text-align: center !important;
+  white-space: nowrap !important;
 }

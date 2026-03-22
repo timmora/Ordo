@@ -1,19 +1,19 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useTasks, useUpdateTask } from '@/hooks/useTasks'
 import { useEvents } from '@/hooks/useEvents'
 import { useCourses } from '@/hooks/useCourses'
 import { useFocusSessions } from '@/hooks/useFocusSessions'
 import { LiveClock } from '@/components/LiveClock'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Calendar, CheckSquare, Timer, BookOpen } from 'lucide-react'
+import { useTasksWithSubtasks } from '@/hooks/useSubtasks'
+import { Sparkles } from 'lucide-react'
 import type { Task } from '@/types/database'
 
-type Tab = 'overview' | 'calendar' | 'tasks' | 'focus' | 'journal'
+type OverviewView = 'today' | 'upcoming'
 
 interface Props {
-  setActiveTab: (tab: Tab) => void
   onTaskClick: (task: Task) => void
+  onDecompose?: (task: Task) => void
 }
 
 const today = () => new Date().toISOString().slice(0, 10)
@@ -24,12 +24,19 @@ function priorityVariant(p: Task['priority']) {
   return 'outline'
 }
 
-export function OverviewTab({ setActiveTab, onTaskClick }: Props) {
+function formatDate(dateStr: string) {
+  const d = new Date(dateStr + 'T00:00:00')
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+}
+
+export function OverviewTab({ onTaskClick, onDecompose }: Props) {
+  const [view, setView] = useState<OverviewView>('today')
   const { data: tasks = [] } = useTasks()
   const { data: events = [] } = useEvents()
   const { data: courses = [] } = useCourses()
   const todayStr = today()
   const { data: focusSessions = [] } = useFocusSessions(todayStr)
+  const { data: decomposedTaskIds } = useTasksWithSubtasks()
   const updateTask = useUpdateTask()
 
   const courseMap = useMemo(
@@ -39,15 +46,24 @@ export function OverviewTab({ setActiveTab, onTaskClick }: Props) {
 
   const todayEvents = useMemo(() => {
     return events
-      .filter((e) => {
-        const start = e.start_time.slice(0, 10)
-        return start === todayStr
-      })
+      .filter((e) => e.start_time.slice(0, 10) === todayStr)
       .sort((a, b) => a.start_time.localeCompare(b.start_time))
   }, [events, todayStr])
 
   const todayTasks = useMemo(() => {
     return tasks.filter((t) => t.due_date === todayStr)
+  }, [tasks, todayStr])
+
+  const upcomingEvents = useMemo(() => {
+    return events
+      .filter((e) => e.start_time.slice(0, 10) > todayStr)
+      .sort((a, b) => a.start_time.localeCompare(b.start_time))
+  }, [events, todayStr])
+
+  const upcomingTasks = useMemo(() => {
+    return tasks
+      .filter((t) => t.due_date > todayStr && t.status !== 'done')
+      .sort((a, b) => a.due_date.localeCompare(b.due_date))
   }, [tasks, todayStr])
 
   const doneTasks = todayTasks.filter((t) => t.status === 'done')
@@ -117,129 +133,233 @@ export function OverviewTab({ setActiveTab, onTaskClick }: Props) {
         </div>
       )}
 
-      {/* Today's events */}
-      <div>
-        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-          Today's Events
-        </h2>
-        {todayEvents.length === 0 ? (
-          <p className="text-sm text-muted-foreground italic">No events today.</p>
-        ) : (
-          <div className="space-y-2">
-            {todayEvents.map((event) => {
-              const course = event.course_id ? courseMap[event.course_id] : null
-              return (
-                <div
-                  key={event.id}
-                  className="flex items-center gap-3 rounded-lg border bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800 px-3 py-2.5"
-                >
-                  {course && (
-                    <span
-                      className="w-2.5 h-2.5 rounded-full shrink-0"
-                      style={{ backgroundColor: course.color }}
-                    />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{event.title}</p>
-                    {course && (
-                      <p className="text-xs text-muted-foreground">{course.name}</p>
-                    )}
-                  </div>
-                  {!event.all_day && (
-                    <span className="text-xs text-muted-foreground font-mono shrink-0">
-                      {formatTime(event.start_time)}
-                    </span>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        )}
+      {/* Today / Upcoming toggle */}
+      <div className="flex gap-1 border-b">
+        {(['today', 'upcoming'] as OverviewView[]).map((v) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => setView(v)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              view === v
+                ? 'border-foreground text-foreground'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            {v === 'today' ? 'Today' : 'Upcoming'}
+          </button>
+        ))}
       </div>
 
-      {/* Today's tasks */}
-      <div>
-        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-          Today's Tasks
-        </h2>
-        {todayTasks.length === 0 ? (
-          <p className="text-sm text-muted-foreground italic">No tasks due today.</p>
-        ) : (
-          <div className="space-y-2">
-            {todayTasks.map((task) => {
-              const course = task.course_id ? courseMap[task.course_id] : null
-              const done = task.status === 'done'
-              return (
-                <div
-                  key={task.id}
-                  className="flex items-center gap-3 rounded-lg border bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800 px-3 py-2.5"
-                >
-                  <button
-                    type="button"
-                    onClick={() => toggleTask(task)}
-                    className={`w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-colors ${
-                      done
-                        ? 'bg-green-500 border-green-500'
-                        : 'border-muted-foreground hover:border-green-500'
-                    }`}
-                  >
-                    {done && (
-                      <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                      </svg>
-                    )}
-                  </button>
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-sm font-medium truncate ${done ? 'line-through text-muted-foreground' : ''}`}>
-                      {task.title}
-                    </p>
-                    {course && (
-                      <p className="text-xs text-muted-foreground">{course.name}</p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <Badge variant={priorityVariant(task.priority)} className="text-xs">
-                      {task.priority}
-                    </Badge>
-                    <button
-                      type="button"
-                      onClick={() => onTaskClick(task)}
-                      className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+      {view === 'today' && (
+        <>
+          {/* Today's events */}
+          <div>
+            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+              Events
+            </h2>
+            {todayEvents.length === 0 ? (
+              <p className="text-sm text-muted-foreground italic">No events today.</p>
+            ) : (
+              <div className="space-y-2">
+                {todayEvents.map((event) => {
+                  const course = event.course_id ? courseMap[event.course_id] : null
+                  return (
+                    <div
+                      key={event.id}
+                      className="flex items-center gap-3 rounded-lg border bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800 px-3 py-2.5"
                     >
-                      Edit
-                    </button>
-                  </div>
-                </div>
-              )
-            })}
+                      {course && (
+                        <span
+                          className="w-2.5 h-2.5 rounded-full shrink-0"
+                          style={{ backgroundColor: course.color }}
+                        />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{event.title}</p>
+                        {course && (
+                          <p className="text-xs text-muted-foreground">{course.name}</p>
+                        )}
+                      </div>
+                      {!event.all_day && (
+                        <span className="text-xs text-muted-foreground font-mono shrink-0">
+                          {formatTime(event.start_time)}
+                        </span>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
-        )}
-      </div>
 
-      {/* Quick actions */}
-      <div>
-        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-          Quick Actions
-        </h2>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" size="sm" onClick={() => setActiveTab('calendar')}>
-            <Calendar className="size-4 mr-1.5" />
-            Open Calendar
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => setActiveTab('tasks')}>
-            <CheckSquare className="size-4 mr-1.5" />
-            All Tasks
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => setActiveTab('focus')}>
-            <Timer className="size-4 mr-1.5" />
-            Start Focus
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => setActiveTab('journal')}>
-            <BookOpen className="size-4 mr-1.5" />
-            Journal
-          </Button>
-        </div>
-      </div>
+          {/* Today's tasks */}
+          <div>
+            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+              Tasks
+            </h2>
+            {todayTasks.length === 0 ? (
+              <p className="text-sm text-muted-foreground italic">No tasks due today.</p>
+            ) : (
+              <div className="space-y-2">
+                {todayTasks.map((task) => {
+                  const course = task.course_id ? courseMap[task.course_id] : null
+                  const done = task.status === 'done'
+                  return (
+                    <div
+                      key={task.id}
+                      className="flex items-center gap-3 rounded-lg border bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800 px-3 py-2.5"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => toggleTask(task)}
+                        className={`w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-colors ${
+                          done
+                            ? 'bg-green-500 border-green-500'
+                            : 'border-muted-foreground hover:border-green-500'
+                        }`}
+                      >
+                        {done && (
+                          <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                          </svg>
+                        )}
+                      </button>
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-sm font-medium truncate ${done ? 'line-through text-muted-foreground' : ''}`}>
+                          {task.title}
+                        </p>
+                        {course && (
+                          <p className="text-xs text-muted-foreground">{course.name}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <Badge variant={priorityVariant(task.priority)} className="text-xs">
+                          {task.priority}
+                        </Badge>
+                        {onDecompose && !done && !decomposedTaskIds?.has(task.id) && (
+                          <button
+                            type="button"
+                            onClick={() => onDecompose(task)}
+                            className="p-1 text-muted-foreground hover:text-amber-500 transition-colors"
+                            title="Break it down"
+                          >
+                            <Sparkles className="size-3.5" />
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => onTaskClick(task)}
+                          className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          Edit
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {view === 'upcoming' && (
+        <>
+          {/* Upcoming events */}
+          <div>
+            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+              Events
+            </h2>
+            {upcomingEvents.length === 0 ? (
+              <p className="text-sm text-muted-foreground italic">No upcoming events.</p>
+            ) : (
+              <div className="space-y-2">
+                {upcomingEvents.map((event) => {
+                  const course = event.course_id ? courseMap[event.course_id] : null
+                  return (
+                    <div
+                      key={event.id}
+                      className="flex items-center gap-3 rounded-lg border bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800 px-3 py-2.5"
+                    >
+                      {course && (
+                        <span
+                          className="w-2.5 h-2.5 rounded-full shrink-0"
+                          style={{ backgroundColor: course.color }}
+                        />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{event.title}</p>
+                        {course && (
+                          <p className="text-xs text-muted-foreground">{course.name}</p>
+                        )}
+                      </div>
+                      <span className="text-xs text-muted-foreground shrink-0">
+                        {formatDate(event.start_time.slice(0, 10))}
+                        {!event.all_day && ` ${formatTime(event.start_time)}`}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Upcoming tasks */}
+          <div>
+            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+              Tasks
+            </h2>
+            {upcomingTasks.length === 0 ? (
+              <p className="text-sm text-muted-foreground italic">No upcoming tasks.</p>
+            ) : (
+              <div className="space-y-2">
+                {upcomingTasks.map((task) => {
+                  const course = task.course_id ? courseMap[task.course_id] : null
+                  return (
+                    <div
+                      key={task.id}
+                      className="flex items-center gap-3 rounded-lg border px-3 py-2.5"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{task.title}</p>
+                        {course && (
+                          <p className="text-xs text-muted-foreground">{course.name}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="text-xs text-muted-foreground">
+                          {formatDate(task.due_date)}
+                        </span>
+                        <Badge variant={priorityVariant(task.priority)} className="text-xs">
+                          {task.priority}
+                        </Badge>
+                        {onDecompose && !decomposedTaskIds?.has(task.id) && (
+                          <button
+                            type="button"
+                            onClick={() => onDecompose(task)}
+                            className="p-1 text-muted-foreground hover:text-amber-500 transition-colors"
+                            title="Break it down"
+                          >
+                            <Sparkles className="size-3.5" />
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => onTaskClick(task)}
+                          className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          Edit
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   )
 }

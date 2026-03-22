@@ -124,19 +124,60 @@ export type CourseInsert = Database['public']['Tables']['courses']['Insert']
 export type EventInsert = Database['public']['Tables']['events']['Insert']
 export type TaskInsert = Database['public']['Tables']['tasks']['Insert']
 
+// Subtasks
+export interface Subtask {
+  id: string
+  user_id: string
+  task_id: string
+  title: string
+  order_index: number
+  estimated_minutes: number
+  scheduled_start: string | null
+  scheduled_end: string | null
+  status: 'pending' | 'in_progress' | 'complete'
+  created_at: string
+}
+
+export interface SubtaskInsert {
+  task_id: string
+  title: string
+  order_index: number
+  estimated_minutes: number
+  scheduled_start?: string | null
+  scheduled_end?: string | null
+  status?: 'pending' | 'in_progress' | 'complete'
+}
+
+export interface SubtaskUpdate {
+  title?: string
+  order_index?: number
+  estimated_minutes?: number
+  scheduled_start?: string | null
+  scheduled_end?: string | null
+  status?: 'pending' | 'in_progress' | 'complete'
+}
+
+// AI decomposition response (not persisted)
+export interface SubtaskSuggestion {
+  title: string
+  estimated_minutes: number
+}
+
 // Focus sessions
 export interface FocusSession {
   id: string
   user_id: string
   task_id: string | null
-  mode: 'focus' | 'short_break' | 'long_break'
+  subtask_id: string | null
+  mode: 'focus' | 'break' | 'short_break' | 'long_break'
   duration_seconds: number
   completed_at: string
 }
 
 export interface FocusSessionInsert {
   task_id?: string | null
-  mode: 'focus' | 'short_break' | 'long_break'
+  subtask_id?: string | null
+  mode: 'focus' | 'break'
   duration_seconds: number
   completed_at?: string
 }

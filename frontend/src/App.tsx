@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { CourseSidebar } from '@/components/courses/CourseSidebar'
 import { EventModal } from '@/components/events/EventModal'
 import { TaskModal } from '@/components/tasks/TaskModal'
+import { DecompositionModal } from '@/components/tasks/DecompositionModal'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { OverviewTab } from '@/components/tabs/OverviewTab'
 import { CalendarTab } from '@/components/tabs/CalendarTab'
@@ -24,6 +25,8 @@ import {
   CheckSquare,
   Timer,
   BookOpen,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react'
 import type { Event, Task } from '@/types/database'
 
@@ -48,6 +51,9 @@ function MainApp() {
   const [defaultStart, setDefaultStart] = useState<Date | undefined>()
   const [defaultEnd, setDefaultEnd] = useState<Date | undefined>()
   const [defaultAllDay, setDefaultAllDay] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [decomposeModalOpen, setDecomposeModalOpen] = useState(false)
+  const [decomposeTask, setDecomposeTask] = useState<Task | undefined>()
 
   function handleDateSelect(arg: DateSelectArg) {
     setSelectedEvent(undefined)
@@ -83,67 +89,110 @@ function MainApp() {
     setTaskModalOpen(true)
   }
 
+  function handleDecompose(task: Task) {
+    setDecomposeTask(task)
+    setDecomposeModalOpen(true)
+  }
+
   async function handleSignOut() {
     await supabase.auth.signOut()
     queryClient.clear()
   }
 
   return (
-    <div className="flex flex-col h-screen bg-background">
-      {/* Header */}
-      <header className="sticky top-0 z-50 flex items-center gap-3 px-4 h-14 border-b bg-background/80 backdrop-blur-sm shrink-0">
-        <span className="font-semibold text-lg tracking-tight mr-1">Ordo</span>
-
-        {/* Tab navigation */}
-        <nav className="flex items-center gap-1">
-          {TABS.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                activeTab === tab.id
-                  ? 'bg-accent text-accent-foreground'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
-              }`}
-            >
-              {tab.icon}
-              <span className="hidden sm:inline">{tab.label}</span>
-            </button>
-          ))}
-        </nav>
-
-        <div className="ml-auto flex items-center gap-2">
-          <Button size="sm" onClick={openNewEvent} variant="outline">
-            <CalendarPlus className="size-4 mr-1.5" />
-            <span className="hidden sm:inline">Add Event</span>
-          </Button>
-          <Button size="sm" onClick={openNewTask} variant="outline">
-            <ListPlus className="size-4 mr-1.5" />
-            <span className="hidden sm:inline">Add Task</span>
-          </Button>
-          <Button size="sm" variant="ghost" onClick={handleSignOut}>
-            <LogOut className="size-4" />
-            <span className="hidden sm:inline ml-1.5">Sign out</span>
-          </Button>
+    <div className="flex h-screen bg-background">
+      {/* Courses sidebar — full height, collapsible to icon rail */}
+      <aside
+        className={`shrink-0 border-r overflow-x-hidden overflow-y-hidden transition-all duration-200 flex flex-col py-3 px-2 ${
+          sidebarOpen ? 'w-56' : 'w-12'
+        }`}
+      >
+        {/* Title + collapse toggle */}
+        <div className="relative h-8 mb-3">
+          <span className={`absolute left-2 top-1/2 -translate-y-1/2 font-serif font-semibold text-lg tracking-tight whitespace-nowrap transition-opacity duration-200 ${sidebarOpen ? 'opacity-100' : 'opacity-0'}`}>Ordo</span>
+          <button
+            type="button"
+            onClick={() => setSidebarOpen((o) => !o)}
+            className="absolute right-0 top-0 flex items-center justify-center w-8 h-8 text-muted-foreground hover:text-foreground transition-colors"
+            title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+          >
+            {sidebarOpen ? <PanelLeftClose className="size-4" /> : <PanelLeftOpen className="size-4" />}
+          </button>
         </div>
-      </header>
 
-      {/* Body: persistent sidebar + tab content */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Courses sidebar — always visible */}
-        <aside className="w-52 shrink-0 border-r overflow-y-auto p-3">
+        {/* Action buttons */}
+        <div className="space-y-1 mb-3 overflow-hidden">
+          <button
+            type="button"
+            onClick={openNewEvent}
+            className="flex items-center gap-2 w-full h-8 px-2 rounded-md text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors overflow-hidden"
+            title="Add Event"
+          >
+            <CalendarPlus className="size-4 shrink-0" />
+            <span className={`whitespace-nowrap transition-opacity duration-200 ${sidebarOpen ? 'opacity-100' : 'opacity-0 w-0 overflow-hidden'}`}>Add Event</span>
+          </button>
+          <button
+            type="button"
+            onClick={openNewTask}
+            className="flex items-center gap-2 w-full h-8 px-2 rounded-md text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors overflow-hidden"
+            title="Add Task"
+          >
+            <ListPlus className="size-4 shrink-0" />
+            <span className={`whitespace-nowrap transition-opacity duration-200 ${sidebarOpen ? 'opacity-100' : 'opacity-0 w-0 overflow-hidden'}`}>Add Task</span>
+          </button>
+        </div>
+
+        {/* Courses */}
+        <div className={`flex-1 min-h-0 overflow-hidden px-1 transition-opacity duration-200 ${sidebarOpen ? 'opacity-100' : 'opacity-0'}`}>
           <CourseSidebar />
-        </aside>
+        </div>
+
+        {/* Sign out at bottom */}
+        <div className="mt-auto pt-2 border-t overflow-hidden">
+          <button
+            type="button"
+            onClick={handleSignOut}
+            className="flex items-center gap-2 w-full h-8 px-2 rounded-md text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors overflow-hidden"
+            title="Sign out"
+          >
+            <LogOut className="size-4 shrink-0" />
+            <span className={`whitespace-nowrap transition-opacity duration-200 ${sidebarOpen ? 'opacity-100' : 'opacity-0 w-0 overflow-hidden'}`}>Sign out</span>
+          </button>
+        </div>
+      </aside>
+
+      {/* Right column: header + tab content */}
+      <div className="flex flex-col flex-1 overflow-hidden">
+        {/* Header */}
+        <header className="sticky top-0 z-50 flex items-center justify-center px-4 h-14 border-b bg-background/80 backdrop-blur-sm shrink-0">
+          {/* Tab navigation */}
+          <nav className="flex items-center gap-1">
+            {TABS.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  activeTab === tab.id
+                    ? 'bg-accent text-accent-foreground'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+                }`}
+              >
+                {tab.icon}
+                <span className="hidden sm:inline">{tab.label}</span>
+              </button>
+            ))}
+          </nav>
+        </header>
 
         {/* Tab content */}
         <main
           className={`flex-1 overflow-auto ${
-            activeTab === 'calendar' ? 'p-3' : 'px-6 py-4'
+            activeTab === 'calendar' ? 'px-3 pt-5 pb-3' : 'px-6 py-4'
           }`}
         >
           {activeTab === 'overview' && (
-            <OverviewTab setActiveTab={setActiveTab} onTaskClick={handleTaskClick} />
+            <OverviewTab onTaskClick={handleTaskClick} onDecompose={handleDecompose} />
           )}
           {activeTab === 'calendar' && (
             <CalendarTab
@@ -153,7 +202,7 @@ function MainApp() {
             />
           )}
           {activeTab === 'tasks' && (
-            <TasksTab onTaskClick={handleTaskClick} onNewTask={openNewTask} />
+            <TasksTab onTaskClick={handleTaskClick} onNewTask={openNewTask} onDecompose={handleDecompose} />
           )}
           {activeTab === 'focus' && <FocusTab />}
           {activeTab === 'journal' && <JournalTab />}
@@ -173,6 +222,12 @@ function MainApp() {
         open={taskModalOpen}
         onClose={() => setTaskModalOpen(false)}
         task={selectedTask}
+        onDecompose={handleDecompose}
+      />
+      <DecompositionModal
+        open={decomposeModalOpen}
+        onClose={() => setDecomposeModalOpen(false)}
+        task={decomposeTask}
       />
     </div>
   )
@@ -226,7 +281,7 @@ function AuthScreen() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background">
       <div className="w-full max-w-sm space-y-6">
-        <h1 className="text-2xl font-semibold text-center">Ordo</h1>
+        <h1 className="text-2xl font-serif font-semibold text-center">Ordo</h1>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="email">Email</Label>

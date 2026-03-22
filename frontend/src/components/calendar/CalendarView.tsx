@@ -38,14 +38,19 @@ export function CalendarView({ onDateSelect, onEventClick, onTaskClick }: Calend
   }
 
   return (
-    <div className="h-full [&_.fc]:h-full [&_.fc-view-harness]:flex-1">
+    <div className="h-full [&_.fc]:h-full [&_.fc-view-harness]:flex-1 fc-custom">
       <FullCalendar
         plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin, rrulePlugin]}
         initialView="timeGridWeek"
         headerToolbar={{
-          left: 'prev,next today',
-          center: 'title',
+          left: 'today',
+          center: 'prev title next',
           right: 'dayGridMonth,timeGridWeek',
+        }}
+        buttonText={{
+          today: 'Today',
+          month: 'Month',
+          week: 'Week',
         }}
         height="100%"
         selectable

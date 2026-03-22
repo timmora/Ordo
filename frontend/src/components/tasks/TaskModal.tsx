@@ -8,8 +8,11 @@ import { Label } from '@/components/ui/label'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
+import { Sparkles } from 'lucide-react'
 import { useCourses } from '@/hooks/useCourses'
 import { useCreateTask, useUpdateTask, useDeleteTask } from '@/hooks/useTasks'
+import { useSubtasks } from '@/hooks/useSubtasks'
+import { SubtaskList } from '@/components/tasks/SubtaskList'
 import type { Task, TaskInsert } from '@/types/database'
 
 interface Props {
@@ -17,13 +20,15 @@ interface Props {
   onClose: () => void
   task?: Task
   defaultDueDate?: string
+  onDecompose?: (task: Task) => void
 }
 
-export function TaskModal({ open, onClose, task, defaultDueDate }: Props) {
+export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: Props) {
   const { data: courses = [] } = useCourses()
   const createTask = useCreateTask()
   const updateTask = useUpdateTask()
   const deleteTask = useDeleteTask()
+  const { data: subtasks = [] } = useSubtasks(task?.id)
 
   const [title, setTitle] = useState('')
   const [courseId, setCourseId] = useState<string>('none')
@@ -81,12 +86,12 @@ export function TaskModal({ open, onClose, task, defaultDueDate }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md max-h-[85vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>{task ? 'Edit Task' : 'New Task'}</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
+        <div className="space-y-4 py-2 flex-1 overflow-y-auto">
           <div className="space-y-1.5">
             <Label>Title</Label>
             <Input
@@ -162,13 +167,26 @@ export function TaskModal({ open, onClose, task, defaultDueDate }: Props) {
               </Select>
             </div>
           )}
+
+          {task && <SubtaskList taskId={task.id} />}
         </div>
 
         <DialogFooter className="flex justify-between">
           {task && (
-            <Button variant="destructive" onClick={handleDelete} disabled={deleteTask.isPending}>
-              Delete
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="destructive" onClick={handleDelete} disabled={deleteTask.isPending}>
+                Delete
+              </Button>
+              {onDecompose && subtasks.length === 0 && (
+                <Button
+                  variant="outline"
+                  onClick={() => { onDecompose(task); onClose() }}
+                >
+                  <Sparkles className="size-4 mr-1.5" />
+                  Break it down
+                </Button>
+              )}
+            </div>
           )}
           <div className="flex gap-2 ml-auto">
             <Button variant="outline" onClick={onClose}>Cancel</Button>
