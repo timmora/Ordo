@@ -1,5 +1,5 @@
 -- ============================================================
--- Aporia — Phase 1 Initial Schema
+-- Ordo — Phase 1 Initial Schema
 -- Run this in your Supabase SQL editor
 -- ============================================================
 

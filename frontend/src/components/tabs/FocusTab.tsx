@@ -40,7 +40,7 @@ const MODE_BG: Record<Mode, string> = {
   long_break: 'bg-blue-500',
 }
 
-const PREFS_KEY = 'aporia_focus_durations'
+const PREFS_KEY = 'ordo_focus_durations'
 
 function loadDurations(): Record<Mode, number> {
   try {

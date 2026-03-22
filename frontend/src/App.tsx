@@ -92,7 +92,7 @@ function MainApp() {
     <div className="flex flex-col h-screen bg-background">
       {/* Header */}
       <header className="sticky top-0 z-50 flex items-center gap-3 px-4 h-14 border-b bg-background/80 backdrop-blur-sm shrink-0">
-        <span className="font-semibold text-lg tracking-tight mr-1">Aporia</span>
+        <span className="font-semibold text-lg tracking-tight mr-1">Ordo</span>
 
         {/* Tab navigation */}
         <nav className="flex items-center gap-1">
@@ -226,7 +226,7 @@ function AuthScreen() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background">
       <div className="w-full max-w-sm space-y-6">
-        <h1 className="text-2xl font-semibold text-center">Aporia</h1>
+        <h1 className="text-2xl font-semibold text-center">Ordo</h1>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="email">Email</Label>

@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI(title="Aporia API", version="0.1.0")
+app = FastAPI(title="Ordo API", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
