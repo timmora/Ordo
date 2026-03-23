@@ -2,6 +2,26 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import type { Subtask, SubtaskInsert, SubtaskUpdate } from '@/types/database'
 
+export function useAllSubtasks() {
+  return useQuery({
+    queryKey: ['subtasks', '_all'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('subtasks')
+        .select('*')
+        .order('order_index')
+      if (error) throw error
+      const map = new Map<string, Subtask[]>()
+      for (const s of (data ?? []) as Subtask[]) {
+        const list = map.get(s.task_id) ?? []
+        list.push(s)
+        map.set(s.task_id, list)
+      }
+      return map
+    },
+  })
+}
+
 export function useTasksWithSubtasks() {
   return useQuery({
     queryKey: ['subtasks', '_task_ids'],
@@ -47,6 +67,7 @@ export function useCreateSubtasks() {
       const taskId = variables[0]?.task_id
       if (taskId) qc.invalidateQueries({ queryKey: ['subtasks', taskId] })
       qc.invalidateQueries({ queryKey: ['subtasks', '_task_ids'] })
+      qc.invalidateQueries({ queryKey: ['subtasks', '_all'] })
     },
   })
 }
@@ -66,6 +87,7 @@ export function useUpdateSubtask() {
     },
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['subtasks', data.task_id] })
+      qc.invalidateQueries({ queryKey: ['subtasks', '_all'] })
     },
   })
 }
@@ -80,6 +102,7 @@ export function useDeleteSubtask() {
     },
     onSuccess: (taskId) => {
       qc.invalidateQueries({ queryKey: ['subtasks', taskId] })
+      qc.invalidateQueries({ queryKey: ['subtasks', '_all'] })
     },
   })
 }
@@ -97,6 +120,8 @@ export function useDeleteTaskSubtasks() {
     },
     onSuccess: (taskId) => {
       qc.invalidateQueries({ queryKey: ['subtasks', taskId] })
+      qc.invalidateQueries({ queryKey: ['subtasks', '_all'] })
+      qc.invalidateQueries({ queryKey: ['subtasks', '_task_ids'] })
     },
   })
 }

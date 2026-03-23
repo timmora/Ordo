@@ -10,7 +10,7 @@ interface Props {
 
 export function CalendarTab({ onDateSelect, onEventClick, onTaskClick }: Props) {
   return (
-    <div className="h-full">
+    <div className="h-full max-w-7xl mx-auto">
       <CalendarView
         onDateSelect={onDateSelect}
         onEventClick={onEventClick}

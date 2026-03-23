@@ -11,6 +11,7 @@ import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { OverviewTab } from '@/components/tabs/OverviewTab'
 import { CalendarTab } from '@/components/tabs/CalendarTab'
 import { TasksTab } from '@/components/tabs/TasksTab'
+import { EventsTab } from '@/components/tabs/EventsTab'
 import { FocusTab } from '@/components/tabs/FocusTab'
 import { JournalTab } from '@/components/tabs/JournalTab'
 import { Button } from '@/components/ui/button'
@@ -18,6 +19,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   CalendarPlus,
+  CalendarDays,
   ListPlus,
   LogOut,
   LayoutDashboard,
@@ -28,15 +30,17 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
 } from 'lucide-react'
+import type { DecomposeContext } from '@/components/tasks/TaskModal'
 import type { Event, Task } from '@/types/database'
 
 const queryClient = new QueryClient()
 
-type Tab = 'overview' | 'calendar' | 'tasks' | 'focus' | 'journal'
+type Tab = 'overview' | 'calendar' | 'events' | 'tasks' | 'focus' | 'journal'
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: 'overview', label: 'Overview', icon: <LayoutDashboard className="size-4" /> },
   { id: 'calendar', label: 'Calendar', icon: <Calendar className="size-4" /> },
+  { id: 'events', label: 'Events', icon: <CalendarDays className="size-4" /> },
   { id: 'tasks', label: 'Tasks', icon: <CheckSquare className="size-4" /> },
   { id: 'focus', label: 'Focus', icon: <Timer className="size-4" /> },
   { id: 'journal', label: 'Journal', icon: <BookOpen className="size-4" /> },
@@ -54,6 +58,8 @@ function MainApp() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [decomposeModalOpen, setDecomposeModalOpen] = useState(false)
   const [decomposeTask, setDecomposeTask] = useState<Task | undefined>()
+  const [decomposeContext, setDecomposeContext] = useState<Omit<DecomposeContext, 'task'>>({})
+
 
   function handleDateSelect(arg: DateSelectArg) {
     setSelectedEvent(undefined)
@@ -89,8 +95,13 @@ function MainApp() {
     setTaskModalOpen(true)
   }
 
-  function handleDecompose(task: Task) {
-    setDecomposeTask(task)
+  function handleDecompose(ctx: DecomposeContext) {
+    setDecomposeTask(ctx.task)
+    setDecomposeContext({
+      description: ctx.description,
+      fileContent: ctx.fileContent,
+      fileName: ctx.fileName,
+    })
     setDecomposeModalOpen(true)
   }
 
@@ -192,7 +203,7 @@ function MainApp() {
           }`}
         >
           {activeTab === 'overview' && (
-            <OverviewTab onTaskClick={handleTaskClick} onDecompose={handleDecompose} />
+            <OverviewTab onTaskClick={handleTaskClick} onDecompose={handleDecompose} onNavigate={(tab) => setActiveTab(tab as Tab)} />
           )}
           {activeTab === 'calendar' && (
             <CalendarTab
@@ -200,6 +211,9 @@ function MainApp() {
               onEventClick={handleEventClick}
               onTaskClick={handleTaskClick}
             />
+          )}
+          {activeTab === 'events' && (
+            <EventsTab onEventClick={handleEventClick} onNewEvent={openNewEvent} />
           )}
           {activeTab === 'tasks' && (
             <TasksTab onTaskClick={handleTaskClick} onNewTask={openNewTask} onDecompose={handleDecompose} />
@@ -226,8 +240,11 @@ function MainApp() {
       />
       <DecompositionModal
         open={decomposeModalOpen}
-        onClose={() => setDecomposeModalOpen(false)}
+        onClose={() => { setDecomposeModalOpen(false); setDecomposeContext({}) }}
         task={decomposeTask}
+        initialDescription={decomposeContext.description}
+        initialFileContent={decomposeContext.fileContent}
+        initialFileName={decomposeContext.fileName}
       />
     </div>
   )

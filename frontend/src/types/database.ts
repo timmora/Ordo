@@ -77,9 +77,11 @@ export interface Database {
           course_id: string | null
           title: string
           due_date: string
+          due_time: string | null
           estimated_hours: number | null
           priority: 'low' | 'medium' | 'high'
           status: 'todo' | 'in_progress' | 'done'
+          recurrence_rule: string | null
           created_at: string
         }
         Insert: {
@@ -88,9 +90,11 @@ export interface Database {
           course_id?: string | null
           title: string
           due_date: string
+          due_time?: string | null
           estimated_hours?: number | null
           priority?: 'low' | 'medium' | 'high'
           status?: 'todo' | 'in_progress' | 'done'
+          recurrence_rule?: string | null
           created_at?: string
         }
         Update: {
@@ -99,9 +103,11 @@ export interface Database {
           course_id?: string | null
           title?: string
           due_date?: string
+          due_time?: string | null
           estimated_hours?: number | null
           priority?: 'low' | 'medium' | 'high'
           status?: 'todo' | 'in_progress' | 'done'
+          recurrence_rule?: string | null
           created_at?: string
         }
       }
@@ -185,6 +191,7 @@ export interface FocusSessionInsert {
 // Journal entries
 export interface JournalPromptResponse {
   prompt: string
+  promptKey?: string
   response: string
 }
 

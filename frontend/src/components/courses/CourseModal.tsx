@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react'
-import { Plus, Trash2 } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { BlockPicker } from 'react-color'
+import { Plus, Trash2, Clock8Icon } from 'lucide-react'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog'
@@ -7,15 +8,15 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select'
+  DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { ChevronDownIcon } from 'lucide-react'
 import { useCreateCourse, useUpdateCourse, useDeleteCourse } from '@/hooks/useCourses'
 import type { Course, ScheduleBlock } from '@/types/database'
 
 const PRESET_COLORS = [
-  '#6366f1', '#8b5cf6', '#ec4899', '#ef4444',
-  '#f97316', '#eab308', '#22c55e', '#14b8a6',
-  '#0ea5e9', '#64748b',
+  '#9B0F06', '#b45309', '#FAE251', '#047857',
+  '#636CCB', '#E491C9',
 ]
 
 const DAYS: ScheduleBlock['day'][] = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -32,6 +33,8 @@ export function CourseModal({ open, onClose, course }: Props) {
   const [name, setName] = useState('')
   const [color, setColor] = useState(PRESET_COLORS[0])
   const [schedule, setSchedule] = useState<ScheduleBlock[]>([])
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [customColors, setCustomColors] = useState<string[]>([])
 
   const createCourse = useCreateCourse()
   const updateCourse = useUpdateCourse()
@@ -42,11 +45,14 @@ export function CourseModal({ open, onClose, course }: Props) {
       setName(course.name)
       setColor(course.color)
       setSchedule(course.schedule)
+      setCustomColors(PRESET_COLORS.includes(course.color) ? [] : [course.color])
     } else {
       setName('')
       setColor(PRESET_COLORS[0])
       setSchedule([])
+      setCustomColors([])
     }
+    setPickerOpen(false)
   }, [course, open])
 
   function addBlock() {
@@ -100,18 +106,59 @@ export function CourseModal({ open, onClose, course }: Props) {
           {/* Color */}
           <div className="space-y-1.5">
             <Label>Color</Label>
-            <div className="flex gap-2 flex-wrap">
+            <div className="flex gap-2 flex-wrap items-center">
               {PRESET_COLORS.map((c) => (
                 <button
                   key={c}
-                  className="size-7 rounded-full ring-offset-2 transition-all"
+                  type="button"
+                  className="size-7 rounded-full"
                   style={{
                     backgroundColor: c,
                     outline: color === c ? `2px solid ${c}` : 'none',
+                    outlineOffset: '2px',
                   }}
-                  onClick={() => setColor(c)}
+                  onClick={() => { setColor(c); setPickerOpen(false) }}
                 />
               ))}
+              {customColors.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  className="size-7 rounded-full"
+                  style={{
+                    backgroundColor: c,
+                    outline: color === c ? `2px solid ${c}` : 'none',
+                    outlineOffset: '2px',
+                  }}
+                  onClick={() => { setColor(c); setPickerOpen(false) }}
+                />
+              ))}
+              <div className="relative flex items-center">
+                <button
+                  type="button"
+                  className="size-7 rounded-full border-2 border-dashed border-muted-foreground/40 hover:border-muted-foreground transition-colors"
+                  title="Custom color"
+                  onClick={() => setPickerOpen((o) => !o)}
+                />
+                {pickerOpen && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setPickerOpen(false)} />
+                    <div className="absolute top-9 left-0 z-50">
+                      <BlockPicker
+                        color={color}
+                        onChangeComplete={(c) => {
+                          setColor(c.hex)
+                          setPickerOpen(false)
+                          setCustomColors((prev) =>
+                            prev.includes(c.hex) ? prev : [...prev, c.hex]
+                          )
+                        }}
+                        triangle="hide"
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
           </div>
 
@@ -126,38 +173,45 @@ export function CourseModal({ open, onClose, course }: Props) {
             <div className="space-y-2">
               {schedule.map((block, i) => (
                 <div key={i} className="flex gap-2 items-center">
-                  <Select
-                    value={block.day}
-                    onValueChange={(v) => updateBlock(i, { day: v as ScheduleBlock['day'] })}
-                  >
-                    <SelectTrigger className="w-24">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {DAYS.map((d) => (
-                        <SelectItem key={d} value={d}>{d}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Input
-                    type="time"
-                    className="w-28"
-                    value={block.start}
-                    onChange={(e) => updateBlock(i, { start: e.target.value })}
-                  />
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" className="w-20 justify-between font-normal">
+                        {block.day}
+                        <ChevronDownIcon />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start">
+                      <DropdownMenuGroup>
+                        {DAYS.filter((d) => d !== block.day).map((d) => (
+                          <DropdownMenuItem key={d} onSelect={() => updateBlock(i, { day: d })}>{d}</DropdownMenuItem>
+                        ))}
+                      </DropdownMenuGroup>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <div className="relative w-32">
+                    <div className="text-muted-foreground pointer-events-none absolute inset-y-0 left-0 flex items-center justify-center pl-3 peer-disabled:opacity-50">
+                      <Clock8Icon className="size-4" />
+                    </div>
+                    <Input
+                      type="time"
+                      value={block.start}
+                      onChange={(e) => updateBlock(i, { start: e.target.value })}
+                      className="peer bg-background appearance-none pl-9 [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none"
+                    />
+                  </div>
                   <span className="text-muted-foreground text-sm">to</span>
-                  <Input
-                    type="time"
-                    className="w-28"
-                    value={block.end}
-                    onChange={(e) => updateBlock(i, { end: e.target.value })}
-                  />
-                  <Input
-                    placeholder="Room"
-                    className="flex-1"
-                    value={block.location ?? ''}
-                    onChange={(e) => updateBlock(i, { location: e.target.value })}
-                  />
+                  <div className="relative w-32">
+                    <div className="text-muted-foreground pointer-events-none absolute inset-y-0 left-0 flex items-center justify-center pl-3 peer-disabled:opacity-50">
+                      <Clock8Icon className="size-4" />
+                    </div>
+                    <Input
+                      type="time"
+                      value={block.end}
+                      onChange={(e) => updateBlock(i, { end: e.target.value })}
+                      className="peer bg-background appearance-none pl-9 [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none"
+                    />
+                  </div>
+
                   <Button size="icon" variant="ghost" onClick={() => removeBlock(i)}>
                     <Trash2 className="size-4 text-destructive" />
                   </Button>

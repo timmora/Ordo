@@ -3,20 +3,51 @@ import { useTasks, useUpdateTask } from '@/hooks/useTasks'
 import { useEvents } from '@/hooks/useEvents'
 import { useCourses } from '@/hooks/useCourses'
 import { useFocusSessions } from '@/hooks/useFocusSessions'
+import { useOverviewSummary } from '@/hooks/useOverviewSummary'
 import { LiveClock } from '@/components/LiveClock'
 import { Badge } from '@/components/ui/badge'
 import { useTasksWithSubtasks } from '@/hooks/useSubtasks'
-import { Sparkles } from 'lucide-react'
+import { Sparkles, Loader2, RefreshCw } from 'lucide-react'
+import type { DecomposeContext } from '@/components/tasks/TaskModal'
 import type { Task } from '@/types/database'
+
+const QUOTES = [
+  'In the middle of difficulty lies opportunity.',
+  'One must imagine Sisyphus happy.',
+  'The only way to do great work is to love what you do.',
+  'Your body is not a temple, it\'s an amusement park. Enjoy the ride.',
+  'The struggle itself toward the heights is enough to fill a man\'s heart.',
+  'Skills can be taught. Character you either have or you don\'t have.',
+  'Live as if you were to die tomorrow. Learn as if you were to live forever.',
+  'It is not the strongest of the species that survives, nor the most intelligent, but the one most responsive to change.',
+  'The unexamined life is not worth living.',
+  'I have no special talents. I am only passionately curious.',
+  'Without work, all life goes rotten.',
+  'If I am not for myself, who will be for me? If I am only for myself, what am I? And if not now, when?',
+  'We suffer more often in imagination than in reality.',
+  'No one can make you feel inferior without your consent.',
+  'The impediment to action advances action. What stands in the way becomes the way.',
+  'Open your mouth only if what you are going to say is more beautiful than silence.',
+  'To be yourself in a world that is constantly trying to make you something else is the greatest accomplishment.',
+  'Travel changes you. As you move through this life and this world you change things slightly, you leave marks behind, however small.',
+  'He who has a why to live for can bear almost any how.',
+  'You must be the change you wish to see in the world.',
+]
+
+const quote = QUOTES[Math.floor(Math.random() * QUOTES.length)]
 
 type OverviewView = 'today' | 'upcoming'
 
 interface Props {
   onTaskClick: (task: Task) => void
-  onDecompose?: (task: Task) => void
+  onDecompose?: (ctx: DecomposeContext) => void
+  onNavigate?: (tab: string) => void
 }
 
-const today = () => new Date().toISOString().slice(0, 10)
+const today = () => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 
 function priorityVariant(p: Task['priority']) {
   if (p === 'high') return 'destructive'
@@ -29,7 +60,7 @@ function formatDate(dateStr: string) {
   return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
 }
 
-export function OverviewTab({ onTaskClick, onDecompose }: Props) {
+export function OverviewTab({ onTaskClick, onDecompose, onNavigate }: Props) {
   const [view, setView] = useState<OverviewView>('today')
   const { data: tasks = [] } = useTasks()
   const { data: events = [] } = useEvents()
@@ -38,6 +69,9 @@ export function OverviewTab({ onTaskClick, onDecompose }: Props) {
   const { data: focusSessions = [] } = useFocusSessions(todayStr)
   const { data: decomposedTaskIds } = useTasksWithSubtasks()
   const updateTask = useUpdateTask()
+  const { data: aiSummary, isLoading: summaryLoading, regenerateSummary } = useOverviewSummary()
+  const [regenerating, setRegenerating] = useState(false)
+  const summaryBusy = summaryLoading || regenerating
 
   const courseMap = useMemo(
     () => Object.fromEntries(courses.map((c) => [c.id, c])),
@@ -50,8 +84,17 @@ export function OverviewTab({ onTaskClick, onDecompose }: Props) {
       .sort((a, b) => a.start_time.localeCompare(b.start_time))
   }, [events, todayStr])
 
+  function isEventPast(event: { start_time: string; end_time: string | null; all_day: boolean }) {
+    if (event.all_day) return false
+    const now = new Date()
+    const compare = event.end_time ? new Date(event.end_time) : new Date(event.start_time)
+    return compare < now
+  }
+
   const todayTasks = useMemo(() => {
-    return tasks.filter((t) => t.due_date === todayStr)
+    return tasks
+      .filter((t) => t.due_date === todayStr)
+      .sort((a, b) => (a.status === 'done' ? 1 : 0) - (b.status === 'done' ? 1 : 0))
   }, [tasks, todayStr])
 
   const upcomingEvents = useMemo(() => {
@@ -63,7 +106,7 @@ export function OverviewTab({ onTaskClick, onDecompose }: Props) {
   const upcomingTasks = useMemo(() => {
     return tasks
       .filter((t) => t.due_date > todayStr && t.status !== 'done')
-      .sort((a, b) => a.due_date.localeCompare(b.due_date))
+      .sort((a, b) => a.due_date.localeCompare(b.due_date) || (a.status === 'done' ? 1 : 0) - (b.status === 'done' ? 1 : 0))
   }, [tasks, todayStr])
 
   const doneTasks = todayTasks.filter((t) => t.status === 'done')
@@ -94,11 +137,42 @@ export function OverviewTab({ onTaskClick, onDecompose }: Props) {
   }
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6 py-4">
+    <div className="max-w-7xl mx-auto space-y-6 py-4">
       {/* Clock + date */}
       <div>
-        <h1 className="text-2xl font-semibold mb-1">Good day</h1>
+        <h1 className="text-2xl font-normal italic mb-1">"{quote}"</h1>
         <LiveClock />
+      </div>
+
+      {/* AI Summary */}
+      <div className="rounded-lg border bg-card p-4 space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
+            <Sparkles className="size-3.5" />
+            Daily Briefing
+          </div>
+          <button
+            type="button"
+            onClick={async () => { setRegenerating(true); try { await regenerateSummary() } finally { setRegenerating(false) } }}
+            disabled={summaryBusy}
+            className="p-1 text-muted-foreground hover:text-foreground transition-colors"
+            title="Refresh summary"
+          >
+            <RefreshCw className={`size-3.5 ${summaryBusy ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+        {summaryBusy && (
+          <div className="flex items-center gap-2 py-2 text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" />
+            <span className="text-sm">Generating your briefing...</span>
+          </div>
+        )}
+        {aiSummary && !summaryBusy && (
+          <>
+            <p className="text-sm">{aiSummary.summary}</p>
+            <p className="text-sm text-muted-foreground italic">{aiSummary.tip}</p>
+          </>
+        )}
       </div>
 
       {/* Stats row */}
@@ -155,19 +229,23 @@ export function OverviewTab({ onTaskClick, onDecompose }: Props) {
         <>
           {/* Today's events */}
           <div>
-            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-              Events
-            </h2>
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Events</h2>
+              {onNavigate && <button type="button" onClick={() => onNavigate('events')} className="text-xs text-muted-foreground hover:text-foreground transition-colors">Go to events</button>}
+            </div>
             {todayEvents.length === 0 ? (
               <p className="text-sm text-muted-foreground italic">No events today.</p>
             ) : (
               <div className="space-y-2">
                 {todayEvents.map((event) => {
                   const course = event.course_id ? courseMap[event.course_id] : null
+                  const past = isEventPast(event)
                   return (
                     <div
                       key={event.id}
-                      className="flex items-center gap-3 rounded-lg border bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800 px-3 py-2.5"
+                      className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 ${
+                        past ? 'bg-muted/40 border-muted opacity-60' : 'bg-card'
+                      }`}
                     >
                       {course && (
                         <span
@@ -176,7 +254,7 @@ export function OverviewTab({ onTaskClick, onDecompose }: Props) {
                         />
                       )}
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{event.title}</p>
+                        <p className={`text-sm font-medium truncate ${past ? 'line-through text-muted-foreground' : ''}`}>{event.title}</p>
                         {course && (
                           <p className="text-xs text-muted-foreground">{course.name}</p>
                         )}
@@ -184,6 +262,7 @@ export function OverviewTab({ onTaskClick, onDecompose }: Props) {
                       {!event.all_day && (
                         <span className="text-xs text-muted-foreground font-mono shrink-0">
                           {formatTime(event.start_time)}
+                          {past && ' · Done'}
                         </span>
                       )}
                     </div>
@@ -195,9 +274,10 @@ export function OverviewTab({ onTaskClick, onDecompose }: Props) {
 
           {/* Today's tasks */}
           <div>
-            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-              Tasks
-            </h2>
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Tasks</h2>
+              {onNavigate && <button type="button" onClick={() => onNavigate('tasks')} className="text-xs text-muted-foreground hover:text-foreground transition-colors">Go to tasks</button>}
+            </div>
             {todayTasks.length === 0 ? (
               <p className="text-sm text-muted-foreground italic">No tasks due today.</p>
             ) : (
@@ -208,7 +288,7 @@ export function OverviewTab({ onTaskClick, onDecompose }: Props) {
                   return (
                     <div
                       key={task.id}
-                      className="flex items-center gap-3 rounded-lg border bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800 px-3 py-2.5"
+                      className="flex items-center gap-3 rounded-lg border bg-card px-3 py-2.5"
                     >
                       <button
                         type="button"
@@ -240,7 +320,7 @@ export function OverviewTab({ onTaskClick, onDecompose }: Props) {
                         {onDecompose && !done && !decomposedTaskIds?.has(task.id) && (
                           <button
                             type="button"
-                            onClick={() => onDecompose(task)}
+                            onClick={() => onDecompose({ task })}
                             className="p-1 text-muted-foreground hover:text-amber-500 transition-colors"
                             title="Break it down"
                           >
@@ -268,9 +348,10 @@ export function OverviewTab({ onTaskClick, onDecompose }: Props) {
         <>
           {/* Upcoming events */}
           <div>
-            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-              Events
-            </h2>
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Events</h2>
+              {onNavigate && <button type="button" onClick={() => onNavigate('events')} className="text-xs text-muted-foreground hover:text-foreground transition-colors">Go to events</button>}
+            </div>
             {upcomingEvents.length === 0 ? (
               <p className="text-sm text-muted-foreground italic">No upcoming events.</p>
             ) : (
@@ -280,7 +361,7 @@ export function OverviewTab({ onTaskClick, onDecompose }: Props) {
                   return (
                     <div
                       key={event.id}
-                      className="flex items-center gap-3 rounded-lg border bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800 px-3 py-2.5"
+                      className="flex items-center gap-3 rounded-lg border bg-card px-3 py-2.5"
                     >
                       {course && (
                         <span
@@ -307,22 +388,39 @@ export function OverviewTab({ onTaskClick, onDecompose }: Props) {
 
           {/* Upcoming tasks */}
           <div>
-            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-              Tasks
-            </h2>
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Tasks</h2>
+              {onNavigate && <button type="button" onClick={() => onNavigate('tasks')} className="text-xs text-muted-foreground hover:text-foreground transition-colors">Go to tasks</button>}
+            </div>
             {upcomingTasks.length === 0 ? (
               <p className="text-sm text-muted-foreground italic">No upcoming tasks.</p>
             ) : (
               <div className="space-y-2">
                 {upcomingTasks.map((task) => {
                   const course = task.course_id ? courseMap[task.course_id] : null
+                  const done = task.status === 'done'
                   return (
                     <div
                       key={task.id}
                       className="flex items-center gap-3 rounded-lg border px-3 py-2.5"
                     >
+                      <button
+                        type="button"
+                        onClick={() => toggleTask(task)}
+                        className={`w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-colors ${
+                          done
+                            ? 'bg-green-500 border-green-500'
+                            : 'border-muted-foreground hover:border-green-500'
+                        }`}
+                      >
+                        {done && (
+                          <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                          </svg>
+                        )}
+                      </button>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{task.title}</p>
+                        <p className={`text-sm font-medium truncate ${done ? 'line-through text-muted-foreground' : ''}`}>{task.title}</p>
                         {course && (
                           <p className="text-xs text-muted-foreground">{course.name}</p>
                         )}
@@ -337,7 +435,7 @@ export function OverviewTab({ onTaskClick, onDecompose }: Props) {
                         {onDecompose && !decomposedTaskIds?.has(task.id) && (
                           <button
                             type="button"
-                            onClick={() => onDecompose(task)}
+                            onClick={() => onDecompose({ task })}
                             className="p-1 text-muted-foreground hover:text-amber-500 transition-colors"
                             title="Break it down"
                           >

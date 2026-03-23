@@ -3,7 +3,10 @@ import { useTasks } from '@/hooks/useTasks'
 import { useSubtasks } from '@/hooks/useSubtasks'
 import { useFocusSessions, useFocusSessionsByTask, useCreateFocusSession } from '@/hooks/useFocusSessions'
 import { Button } from '@/components/ui/button'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { ChevronDownIcon } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -260,7 +263,7 @@ export function FocusTab() {
           }}
           className={`w-16 h-16 rounded-full p-0 border-2 border-border transition-all duration-200 ${
             running
-              ? 'scale-95 bg-muted/60 text-muted-foreground hover:scale-100'
+              ? 'scale-95 bg-muted/60 text-muted-foreground hover:scale-100 hover:bg-muted/60 hover:text-muted-foreground'
               : 'bg-background text-foreground hover:scale-110'
           }`}
         >
@@ -329,51 +332,63 @@ export function FocusTab() {
       {/* Task selector */}
       <div className="space-y-2">
         <Label className="text-sm text-muted-foreground">Focusing on</Label>
-        <Select
-          value={selectedTaskId}
-          onValueChange={(v) => { setSelectedTaskId(v); setSelectedSubtaskId('none') }}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder="Select a task (optional)" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="none">No task selected</SelectItem>
-            {pendingTasks.map((t) => (
-              <SelectItem key={t.id} value={t.id}>
-                {t.title}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" className="w-full justify-between font-normal min-w-0">
+              <span className={`truncate ${selectedTaskId === 'none' ? 'text-muted-foreground' : ''}`}>{selectedTaskId === 'none' ? 'None' : pendingTasks.find((t) => t.id === selectedTaskId)?.title ?? 'None'}</span>
+              <ChevronDownIcon className="shrink-0" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)] max-h-60 overflow-y-auto">
+            <DropdownMenuGroup>
+              {pendingTasks.filter((t) => t.id !== selectedTaskId).map((t) => (
+                <DropdownMenuItem key={t.id} onSelect={() => { setSelectedTaskId(t.id); setSelectedSubtaskId('none') }}>{t.title}</DropdownMenuItem>
+              ))}
+              {selectedTaskId !== 'none' && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={() => { setSelectedTaskId('none'); setSelectedSubtaskId('none') }}>None</DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         {/* Subtask selector — shown when a task with subtasks is selected */}
         {selectedTaskId !== 'none' && subtasks.length > 0 && (
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground">Subtask</Label>
-            <Select
-              value={selectedSubtaskId}
-              onValueChange={setSelectedSubtaskId}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select a subtask" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">No subtask selected</SelectItem>
-                {subtasks.map((s, i) => {
-                  const complete = s.status === 'complete'
-                  const unlocked = complete || subtasks.slice(0, i).every((prev) => prev.status === 'complete')
-                  return (
-                    <SelectItem
-                      key={s.id}
-                      value={s.id}
-                      disabled={!unlocked || complete}
-                    >
-                      {complete ? '\u2713 ' : !unlocked ? '\uD83D\uDD12 ' : ''}{s.title}
-                    </SelectItem>
-                  )
-                })}
-              </SelectContent>
-            </Select>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="w-full justify-between font-normal min-w-0">
+                  <span className={`truncate ${selectedSubtaskId === 'none' ? 'text-muted-foreground' : ''}`}>{selectedSubtaskId === 'none' ? 'None' : subtasks.find((s) => s.id === selectedSubtaskId)?.title ?? 'None'}</span>
+                  <ChevronDownIcon className="shrink-0" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)] max-h-60 overflow-y-auto">
+                <DropdownMenuGroup>
+                  {subtasks.filter((s) => s.id !== selectedSubtaskId && s.status !== 'complete').map((s) => {
+                    const originalIndex = subtasks.indexOf(s)
+                    const unlocked = subtasks.slice(0, originalIndex).every((prev) => prev.status === 'complete')
+                    return (
+                      <DropdownMenuItem
+                        key={s.id}
+                        disabled={!unlocked}
+                        onSelect={() => setSelectedSubtaskId(s.id)}
+                      >
+                        {!unlocked ? '\uD83D\uDD12 ' : ''}{s.title}
+                      </DropdownMenuItem>
+                    )
+                  })}
+                  {selectedSubtaskId !== 'none' && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onSelect={() => setSelectedSubtaskId('none')}>None</DropdownMenuItem>
+                    </>
+                  )}
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         )}
       </div>

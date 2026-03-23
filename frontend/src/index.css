@@ -4,6 +4,14 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Hide scrollbar arrows globally */
+::-webkit-scrollbar-button {
+  display: none;
+}
+* {
+  scrollbar-width: thin;
+}
+
 @theme inline {
   --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
   --font-serif: 'Libre Baskerville', ui-serif, Georgia, serif;
@@ -128,44 +136,68 @@
   }
 }
 
-/* FullCalendar toolbar overrides */
+/* FullCalendar — use site font */
+.fc-custom .fc {
+  font-family: var(--font-sans) !important;
+}
+
+/* FullCalendar toolbar overrides — pill style buttons */
 .fc-custom .fc-button {
-  background: none !important;
-  border: 1px solid var(--border) !important;
+  background: transparent !important;
+  border: none !important;
   color: var(--muted-foreground) !important;
   box-shadow: none !important;
-  font-size: 0.875rem !important;
-  padding: 0.5rem 1rem !important;
-  border-radius: 0.5rem !important;
-  transition: color 0.15s, background-color 0.15s;
+  font-size: 1rem !important;
+  font-weight: 500 !important;
+  padding: 0.5rem 1.5rem !important;
+  border-radius: 9999px !important;
+  transition: all 0.15s;
+  outline: none !important;
 }
-.fc-custom .fc-button:hover {
+.fc-custom .fc-button:hover:not(.fc-button-active) {
   color: var(--foreground) !important;
   background-color: var(--muted) !important;
 }
-.fc-custom .fc-button-active {
+.fc-custom .fc-button:focus {
+  box-shadow: none !important;
+  outline: none !important;
+}
+.fc-custom .fc-button-active,
+.fc-custom .fc-button-active:hover,
+.fc-custom .fc-button-active:focus {
   background-color: var(--foreground) !important;
   color: var(--background) !important;
-  border-color: var(--foreground) !important;
 }
 /* Prev/next arrows — minimal gray chevrons */
 .fc-custom .fc-prev-button,
 .fc-custom .fc-next-button {
-  border: none !important;
   padding: 0.25rem !important;
   color: var(--muted-foreground) !important;
-  background: none !important;
 }
 .fc-custom .fc-prev-button:hover,
 .fc-custom .fc-next-button:hover {
   color: var(--foreground) !important;
   background: none !important;
 }
+/* Toolbar: left/right flex-1 so center chunk is truly centered */
+.fc-custom .fc-toolbar {
+  display: flex !important;
+  align-items: center !important;
+}
+.fc-custom .fc-toolbar-chunk:nth-child(1),
+.fc-custom .fc-toolbar-chunk:nth-child(3) {
+  flex: 1 !important;
+}
+.fc-custom .fc-toolbar-chunk:nth-child(3) {
+  display: flex !important;
+  justify-content: flex-end !important;
+}
 /* Center chunk: prev / title / next in a row */
 .fc-custom .fc-toolbar-chunk:nth-child(2) {
   display: flex !important;
   align-items: center !important;
   gap: 0.25rem;
+  flex-shrink: 0 !important;
 }
 /* Right button group spacing */
 .fc-custom .fc-toolbar-chunk:nth-child(3) .fc-button-group {
@@ -175,4 +207,28 @@
   width: 20rem !important;
   text-align: center !important;
   white-space: nowrap !important;
+  font-weight: 700 !important;
+}
+/* Compact toolbar on narrow screens */
+@media (max-width: 768px) {
+  .fc-custom .fc-toolbar-title {
+    display: none !important;
+  }
+  .fc-custom .fc-button {
+    font-size: 0.8rem !important;
+    padding: 0.4rem 0.75rem !important;
+  }
+  .fc-custom .fc-toolbar-chunk:nth-child(2) {
+    gap: 2.5rem !important;
+  }
+}
+@media (min-width: 769px) and (max-width: 1024px) {
+  .fc-custom .fc-toolbar-title {
+    width: 14rem !important;
+    font-size: 1.1rem !important;
+  }
+  .fc-custom .fc-button {
+    font-size: 0.875rem !important;
+    padding: 0.4rem 1rem !important;
+  }
 }

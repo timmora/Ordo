@@ -1,10 +1,46 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { ChevronUp, ChevronDown, X, Plus, Loader2, RefreshCw } from 'lucide-react'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { GripVertical, X, Plus, Loader2, RefreshCw, Paperclip } from 'lucide-react'
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type Modifier,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+
+const restrictToVerticalWithinContainer: Modifier = ({
+  transform,
+  draggingNodeRect,
+  containerNodeRect,
+}) => {
+  if (!draggingNodeRect || !containerNodeRect) {
+    return { ...transform, x: 0 }
+  }
+  const minY = containerNodeRect.top - draggingNodeRect.top
+  const maxY = containerNodeRect.bottom - draggingNodeRect.bottom
+  return {
+    ...transform,
+    x: 0,
+    y: Math.min(Math.max(transform.y, minY), maxY),
+  }
+}
 import { useDecompose } from '@/hooks/useDecompose'
 import { useSubtasks, useCreateSubtasks, useDeleteTaskSubtasks } from '@/hooks/useSubtasks'
 import type { Task } from '@/types/database'
@@ -19,50 +55,172 @@ interface Props {
   open: boolean
   onClose: () => void
   task?: Task
+  initialDescription?: string
+  initialFileContent?: string
+  initialFileName?: string
 }
 
-export function DecompositionModal({ open, onClose, task }: Props) {
+function SortableSubtaskRow({
+  draft,
+  onUpdate,
+  onRemove,
+}: {
+  draft: DraftSubtask
+  onUpdate: (field: keyof DraftSubtask, value: string | number) => void
+  onRemove: () => void
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: draft.tempId })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  }
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`flex items-center gap-2 rounded-md border p-2 bg-background ${isDragging ? 'opacity-50 shadow-lg' : ''}`}
+    >
+      <button
+        type="button"
+        className="shrink-0 cursor-grab active:cursor-grabbing p-0.5 text-muted-foreground hover:text-foreground touch-none"
+        {...attributes}
+        {...listeners}
+      >
+        <GripVertical className="size-4" />
+      </button>
+
+      <Input
+        className="flex-1 h-8 text-sm"
+        placeholder="Subtask title"
+        value={draft.title}
+        onChange={(e) => onUpdate('title', e.target.value)}
+      />
+
+      <Input
+        className="w-16 h-8 text-sm text-center [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:textfield]"
+        type="number"
+        min={5}
+        max={240}
+        step={5}
+        value={draft.estimated_minutes}
+        onChange={(e) => onUpdate('estimated_minutes', parseInt(e.target.value) || 0)}
+      />
+      <span className="text-xs text-muted-foreground shrink-0">min</span>
+
+      <button
+        type="button"
+        className="p-1 hover:bg-destructive/10 hover:text-destructive rounded shrink-0"
+        onClick={onRemove}
+      >
+        <X className="size-3.5" />
+      </button>
+    </div>
+  )
+}
+
+export function DecompositionModal({ open, onClose, task, initialDescription, initialFileContent, initialFileName }: Props) {
   const [drafts, setDrafts] = useState<DraftSubtask[]>([])
   const [hasGenerated, setHasGenerated] = useState(false)
+  const [description, setDescription] = useState('')
+  const [fileName, setFileName] = useState('')
+  const [fileContent, setFileContent] = useState('')
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const decompose = useDecompose()
   const createSubtasks = useCreateSubtasks()
   const deleteTaskSubtasks = useDeleteTaskSubtasks()
   const { data: existingSubtasks = [] } = useSubtasks(task?.id)
 
-  // Auto-trigger decomposition when modal opens with a task
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  )
+
+  const autoGenerateRef = useRef(false)
+
   useEffect(() => {
-    if (open && task && !hasGenerated) {
-      generate()
-    }
-    if (!open) {
+    if (open) {
+      // Pre-populate from initial context (e.g. "Save & Break Down" flow)
+      if (initialDescription) setDescription(initialDescription)
+      if (initialFileContent) setFileContent(initialFileContent)
+      if (initialFileName) setFileName(initialFileName)
+      // Auto-generate if context was provided
+      if (initialDescription || initialFileContent) {
+        autoGenerateRef.current = true
+      }
+    } else {
       setDrafts([])
       setHasGenerated(false)
+      setDescription('')
+      setFileName('')
+      setFileContent('')
       decompose.reset()
+      autoGenerateRef.current = false
     }
   }, [open, task?.id])
+
+  // Auto-generate after initial context is populated
+  useEffect(() => {
+    if (autoGenerateRef.current && open && task && !hasGenerated && !decompose.isPending) {
+      autoGenerateRef.current = false
+      generate()
+    }
+  })
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setFileName(file.name)
+    const reader = new FileReader()
+    reader.onload = () => {
+      setFileContent(reader.result as string)
+    }
+    reader.readAsText(file)
+  }
+
+  function removeFile() {
+    setFileName('')
+    setFileContent('')
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
 
   function generate() {
     if (!task) return
     setHasGenerated(true)
-    decompose.mutate(task.id, {
-      onSuccess: (suggestions) => {
-        setDrafts(
-          suggestions.map((s) => ({
-            tempId: crypto.randomUUID(),
-            title: s.title,
-            estimated_minutes: s.estimated_minutes,
-          }))
-        )
+    decompose.mutate(
+      {
+        taskId: task.id,
+        description: description.trim() || undefined,
+        fileContent: fileContent || undefined,
+        fileName: fileName || undefined,
       },
-    })
+      {
+        onSuccess: (suggestions) => {
+          setDrafts(
+            suggestions.map((s) => ({
+              tempId: crypto.randomUUID(),
+              title: s.title,
+              estimated_minutes: s.estimated_minutes,
+            }))
+          )
+        },
+      }
+    )
   }
 
   function handleRegenerate() {
     setDrafts([])
     decompose.reset()
     setHasGenerated(false)
-    // Small delay so the reset takes effect before re-triggering
     setTimeout(() => generate(), 0)
   }
 
@@ -76,20 +234,15 @@ export function DecompositionModal({ open, onClose, task }: Props) {
     setDrafts((prev) => prev.filter((d) => d.tempId !== tempId))
   }
 
-  function moveUp(index: number) {
-    if (index === 0) return
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
     setDrafts((prev) => {
+      const oldIndex = prev.findIndex((d) => d.tempId === active.id)
+      const newIndex = prev.findIndex((d) => d.tempId === over.id)
       const next = [...prev]
-      ;[next[index - 1], next[index]] = [next[index], next[index - 1]]
-      return next
-    })
-  }
-
-  function moveDown(index: number) {
-    setDrafts((prev) => {
-      if (index >= prev.length - 1) return prev
-      const next = [...prev]
-      ;[next[index], next[index + 1]] = [next[index + 1], next[index]]
+      const [moved] = next.splice(oldIndex, 1)
+      next.splice(newIndex, 0, moved)
       return next
     })
   }
@@ -145,7 +298,58 @@ export function DecompositionModal({ open, onClose, task }: Props) {
           )}
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto py-2 space-y-3">
+        <div className="flex-1 overflow-y-auto py-2 space-y-3 px-1 -mx-1">
+          {/* Context step — shown before generating */}
+          {!hasGenerated && !isLoading && (
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <Label>Describe the task (optional)</Label>
+                <Textarea
+                  placeholder="e.g. Write a 10-page research paper on machine learning ethics, needs at least 5 academic sources..."
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={3}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Attach a file (optional)</Label>
+                <p className="text-xs text-muted-foreground">
+                  Attach a rubric, assignment sheet, or syllabus to help the AI understand the task.
+                </p>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".txt,.md,.pdf,.csv,.json,.html,.py,.js,.ts,.tex,.rtf"
+                  onChange={handleFileChange}
+                  className="hidden"
+                />
+                {fileName ? (
+                  <div className="flex items-center gap-2 rounded-md border px-3 py-2">
+                    <Paperclip className="size-4 text-muted-foreground shrink-0" />
+                    <span className="text-sm flex-1 truncate">{fileName}</span>
+                    <button
+                      type="button"
+                      onClick={removeFile}
+                      className="p-0.5 hover:bg-destructive/10 hover:text-destructive rounded"
+                    >
+                      <X className="size-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <Paperclip className="size-4 mr-1.5" />
+                    Choose file
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Loading state */}
           {isLoading && (
             <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
@@ -182,63 +386,28 @@ export function DecompositionModal({ open, onClose, task }: Props) {
                 <span>Total: {totalDisplay}</span>
               </div>
 
-              {drafts.map((draft, i) => (
-                <div
-                  key={draft.tempId}
-                  className="flex items-center gap-2 rounded-md border p-2"
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleDragEnd}
+                modifiers={[restrictToVerticalWithinContainer]}
+              >
+                <SortableContext
+                  items={drafts.map((d) => d.tempId)}
+                  strategy={verticalListSortingStrategy}
                 >
-                  <span className="text-xs text-muted-foreground w-5 text-center shrink-0">
-                    {i + 1}
-                  </span>
-
-                  <Input
-                    className="flex-1 h-8 text-sm"
-                    placeholder="Subtask title"
-                    value={draft.title}
-                    onChange={(e) => updateDraft(draft.tempId, 'title', e.target.value)}
-                  />
-
-                  <Input
-                    className="w-16 h-8 text-sm text-center"
-                    type="number"
-                    min={5}
-                    max={240}
-                    step={5}
-                    value={draft.estimated_minutes}
-                    onChange={(e) =>
-                      updateDraft(draft.tempId, 'estimated_minutes', parseInt(e.target.value) || 0)
-                    }
-                  />
-                  <span className="text-xs text-muted-foreground shrink-0">min</span>
-
-                  <div className="flex flex-col shrink-0">
-                    <button
-                      type="button"
-                      className="p-0.5 hover:bg-accent rounded disabled:opacity-30"
-                      onClick={() => moveUp(i)}
-                      disabled={i === 0}
-                    >
-                      <ChevronUp className="size-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      className="p-0.5 hover:bg-accent rounded disabled:opacity-30"
-                      onClick={() => moveDown(i)}
-                      disabled={i === drafts.length - 1}
-                    >
-                      <ChevronDown className="size-3.5" />
-                    </button>
+                  <div className="space-y-2">
+                    {drafts.map((draft) => (
+                      <SortableSubtaskRow
+                        key={draft.tempId}
+                        draft={draft}
+                        onUpdate={(field, value) => updateDraft(draft.tempId, field, value)}
+                        onRemove={() => removeDraft(draft.tempId)}
+                      />
+                    ))}
                   </div>
-
-                  <button
-                    type="button"
-                    className="p-1 hover:bg-destructive/10 hover:text-destructive rounded shrink-0"
-                    onClick={() => removeDraft(draft.tempId)}
-                  >
-                    <X className="size-3.5" />
-                  </button>
-                </div>
-              ))}
+                </SortableContext>
+              </DndContext>
 
               <Button variant="ghost" size="sm" className="w-full" onClick={addDraft}>
                 <Plus className="size-4 mr-1.5" />
@@ -249,23 +418,34 @@ export function DecompositionModal({ open, onClose, task }: Props) {
         </div>
 
         <DialogFooter className="flex justify-between pt-2 border-t">
-          {!isLoading && drafts.length > 0 && (
-            <Button variant="outline" size="sm" onClick={handleRegenerate}>
-              <RefreshCw className="size-4 mr-1.5" />
-              Regenerate
-            </Button>
+          {!hasGenerated && !isLoading && (
+            <div className="flex gap-2 ml-auto">
+              <Button variant="outline" onClick={onClose}>Cancel</Button>
+              <Button onClick={generate}>Generate</Button>
+            </div>
           )}
-          <div className="flex gap-2 ml-auto">
-            <Button variant="outline" onClick={onClose}>Cancel</Button>
-            {!isLoading && drafts.length > 0 && (
-              <Button
-                onClick={handleConfirm}
-                disabled={isConfirming || drafts.some((d) => !d.title.trim())}
-              >
-                {isConfirming ? 'Saving...' : 'Confirm'}
+          {isLoading && (
+            <div className="flex gap-2 ml-auto">
+              <Button variant="outline" onClick={onClose}>Cancel</Button>
+            </div>
+          )}
+          {!isLoading && drafts.length > 0 && (
+            <>
+              <Button variant="outline" size="sm" onClick={handleRegenerate}>
+                <RefreshCw className="size-4 mr-1.5" />
+                Regenerate
               </Button>
-            )}
-          </div>
+              <div className="flex gap-2 ml-auto">
+                <Button variant="outline" onClick={onClose}>Cancel</Button>
+                <Button
+                  onClick={handleConfirm}
+                  disabled={isConfirming || drafts.some((d) => !d.title.trim())}
+                >
+                  {isConfirming ? 'Saving...' : 'Confirm'}
+                </Button>
+              </div>
+            </>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

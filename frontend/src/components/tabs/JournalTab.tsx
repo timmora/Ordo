@@ -1,40 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useJournalEntry, useUpsertJournalEntry } from '@/hooks/useJournalEntries'
+import { useTasks } from '@/hooks/useTasks'
+import { useEvents } from '@/hooks/useEvents'
+import { useCourses } from '@/hooks/useCourses'
 import { Button } from '@/components/ui/button'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Calendar } from '@/components/ui/calendar'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { parse, format } from 'date-fns'
+import { getPromptsForDate, matchResponses } from '@/lib/journalPrompts'
 import type { JournalPromptResponse } from '@/types/database'
-
-const PROMPTS = [
-  "What are the three most important things you want to accomplish today?",
-  "What are you feeling grateful for right now?",
-  "What's one challenge you're facing, and how might you approach it?",
-  "What did you learn yesterday that you can apply today?",
-  "What's one habit you want to build or strengthen this week?",
-  "How are you feeling right now, physically and emotionally?",
-  "What's one thing you've been putting off that you could do today?",
-  "What's your biggest priority this week and why?",
-  "Who in your life are you grateful for, and why?",
-  "What's something you're looking forward to?",
-  "What would make today feel like a success?",
-  "What's one thing you can do to take care of yourself today?",
-  "What's on your mind that you haven't had a chance to process?",
-  "What's something you want to remember from the past week?",
-  "If you could give your past self one piece of advice, what would it be?",
-]
-
-function getPromptsForDate(dateStr: string): string[] {
-  // Deterministic: use the day-of-year as a seed to pick 3 prompts
-  const date = new Date(dateStr + 'T00:00:00')
-  const dayOfYear = Math.floor(
-    (date.getTime() - new Date(date.getFullYear(), 0, 0).getTime()) / 86400000
-  )
-  const indices = [
-    dayOfYear % PROMPTS.length,
-    (dayOfYear + 5) % PROMPTS.length,
-    (dayOfYear + 10) % PROMPTS.length,
-  ]
-  return indices.map((i) => PROMPTS[i])
-}
 
 function formatDisplayDate(dateStr: string) {
   return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', {
@@ -55,29 +30,52 @@ export function JournalTab() {
   const todayStr = new Date().toISOString().slice(0, 10)
   const [selectedDate, setSelectedDate] = useState(todayStr)
 
-  const prompts = useMemo(() => getPromptsForDate(selectedDate), [selectedDate])
+  const { data: tasks = [] } = useTasks()
+  const { data: events = [] } = useEvents()
+  const { data: courses = [] } = useCourses()
+
+  const prompts = useMemo(
+    () => getPromptsForDate(selectedDate, tasks, events, courses),
+    [selectedDate, tasks, events, courses]
+  )
 
   const { data: entry } = useJournalEntry(selectedDate)
   const upsert = useUpsertJournalEntry()
 
-  // Local state for textarea values
-  const [responses, setResponses] = useState<string[]>(['', '', ''])
+  // Local state for textarea values + orphaned responses
+  const [responses, setResponses] = useState<string[]>(['', '', '', ''])
+  const [orphaned, setOrphaned] = useState<Array<{ prompt: string; response: string }>>([])
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Sync from DB whenever entry or date changes
+  // Cancel any pending save when date changes, BEFORE syncing new data
   useEffect(() => {
-    if (entry) {
-      const mapped = prompts.map((p) => {
-        const found = entry.responses.find((r: JournalPromptResponse) => r.prompt === p)
-        return found ? found.response : ''
-      })
-      setResponses(mapped)
-    } else {
-      setResponses(['', '', ''])
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current)
+      saveTimerRef.current = null
     }
     setSaveStatus('idle')
-  }, [entry, selectedDate]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedDate])
+
+  // Sync from DB whenever entry or prompts change
+  useEffect(() => {
+    if (entry) {
+      const result = matchResponses(prompts, entry.responses)
+      setResponses(result.responses)
+      setOrphaned(result.orphaned)
+    } else {
+      setResponses(prompts.map(() => ''))
+      setOrphaned([])
+    }
+  }, [entry, prompts])
+
+  // Refs to capture current values for the debounced save closure
+  const dateRef = useRef(selectedDate)
+  const promptsRef = useRef(prompts)
+  const orphanedRef = useRef(orphaned)
+  useEffect(() => { dateRef.current = selectedDate }, [selectedDate])
+  useEffect(() => { promptsRef.current = prompts }, [prompts])
+  useEffect(() => { orphanedRef.current = orphaned }, [orphaned])
 
   function handleChange(idx: number, value: string) {
     const next = [...responses]
@@ -88,12 +86,20 @@ export function JournalTab() {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     setSaveStatus('saving')
     saveTimerRef.current = setTimeout(() => {
-      const payload: JournalPromptResponse[] = prompts.map((p, i) => ({
-        prompt: p,
+      const currentPrompts = promptsRef.current
+      const currentDate = dateRef.current
+      const currentOrphaned = orphanedRef.current
+      const payload: JournalPromptResponse[] = currentPrompts.map((p, i) => ({
+        prompt: p.prompt,
+        promptKey: p.promptKey,
         response: next[i],
       }))
+      // Preserve orphaned responses so they aren't lost
+      for (const o of currentOrphaned) {
+        payload.push({ prompt: o.prompt, response: o.response })
+      }
       upsert.mutate(
-        { date: selectedDate, responses: payload },
+        { date: currentDate, responses: payload },
         { onSuccess: () => setSaveStatus('saved') }
       )
     }, 1000)
@@ -113,13 +119,30 @@ export function JournalTab() {
         >
           <ChevronLeft className="size-4" />
         </Button>
-        <div className="text-center">
-          <h1 className="text-lg font-semibold">{formatDisplayDate(selectedDate)}</h1>
+        <div className="text-center relative">
+          <Popover>
+            <PopoverTrigger asChild>
+              <button type="button" className="hover:text-muted-foreground transition-colors cursor-pointer">
+                <h1 className="text-2xl font-bold">{formatDisplayDate(selectedDate)}</h1>
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="center">
+              <Calendar
+                mode="single"
+                selected={parse(selectedDate, 'yyyy-MM-dd', new Date())}
+                onSelect={(date) => {
+                  if (date) setSelectedDate(format(date, 'yyyy-MM-dd'))
+                }}
+                disabled={(date) => date > new Date()}
+                initialFocus
+              />
+            </PopoverContent>
+          </Popover>
           {!isToday && (
             <button
               type="button"
               onClick={() => setSelectedDate(todayStr)}
-              className="text-xs text-muted-foreground underline mt-0.5"
+              className="absolute top-full left-1/2 -translate-x-1/2 text-xs text-muted-foreground underline mt-0.5"
             >
               Back to today
             </button>
@@ -149,9 +172,9 @@ export function JournalTab() {
         </p>
       ) : (
         <div className="space-y-6">
-          {prompts.map((prompt, idx) => (
-            <div key={prompt} className="space-y-2">
-              <p className="text-sm font-medium leading-snug">{prompt}</p>
+          {prompts.map((p, idx) => (
+            <div key={p.promptKey ?? p.prompt} className="space-y-2">
+              <p className="text-sm font-medium leading-snug">{p.prompt}</p>
               <textarea
                 className="w-full min-h-[120px] rounded-md border bg-card px-3 py-2 text-sm resize-y placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                 placeholder="Write your thoughts…"
@@ -160,6 +183,19 @@ export function JournalTab() {
               />
             </div>
           ))}
+
+          {/* Orphaned responses from deleted tasks/events */}
+          {orphaned.length > 0 && (
+            <div className="space-y-4 pt-4 border-t">
+              <p className="text-xs text-muted-foreground">Previous responses</p>
+              {orphaned.map((o, i) => (
+                <div key={i} className="space-y-1 opacity-60">
+                  <p className="text-sm font-medium leading-snug text-muted-foreground">{o.prompt}</p>
+                  <p className="text-sm bg-muted/40 rounded-md px-3 py-2 whitespace-pre-wrap">{o.response}</p>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

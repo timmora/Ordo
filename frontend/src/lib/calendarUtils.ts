@@ -18,15 +18,40 @@ export function dbEventsToFC(events: Event[], courses: Course[]): EventInput[] {
 
   return events.map((ev) => {
     const course = ev.course_id ? courseMap.get(ev.course_id) : undefined
+    const color = ev.color ?? course?.color ?? '#6366f1'
+
+    // Recurring events need rrule object with dtstart; non-recurring use start/end
+    if (ev.recurrence_rule) {
+      const dtstart = ev.start_time
+      // Calculate duration if end_time exists
+      const duration = ev.end_time
+        ? { milliseconds: new Date(ev.end_time).getTime() - new Date(ev.start_time).getTime() }
+        : undefined
+      return {
+        id: ev.id,
+        title: ev.title,
+        allDay: ev.all_day,
+        backgroundColor: color,
+        borderColor: color,
+        rrule: {
+          freq: ev.recurrence_rule.replace('FREQ=', '').toLowerCase(),
+          dtstart,
+        },
+        duration: duration
+          ? `${String(Math.floor(duration.milliseconds / 3600000)).padStart(2, '0')}:${String(Math.floor((duration.milliseconds % 3600000) / 60000)).padStart(2, '0')}`
+          : undefined,
+        extendedProps: { type: 'event', dbEvent: ev },
+      }
+    }
+
     return {
       id: ev.id,
       title: ev.title,
       start: ev.start_time,
       end: ev.end_time ?? undefined,
       allDay: ev.all_day,
-      backgroundColor: ev.color ?? course?.color ?? '#6366f1',
-      borderColor: ev.color ?? course?.color ?? '#6366f1',
-      rrule: ev.recurrence_rule ?? undefined,
+      backgroundColor: color,
+      borderColor: color,
       extendedProps: { type: 'event', dbEvent: ev },
     }
   })
@@ -61,19 +86,43 @@ export function courseScheduleToFC(courses: Course[]): EventInput[] {
 export function tasksToFC(tasks: Task[], courses: Course[]): EventInput[] {
   const courseMap = new Map(courses.map((c) => [c.id, c]))
 
-  return tasks
-    .filter((t) => t.status !== 'done')
-    .map((task) => {
+  return tasks.map((task) => {
       const course = task.course_id ? courseMap.get(task.course_id) : undefined
       const color = course?.color ?? '#94a3b8'
+      const hasTime = !!task.due_time
+      const lateNight = hasTime && task.due_time! >= '23:30' // 11:30 PM+
+      // Shift late-night tasks earlier so they don't get cut off at the bottom
+      const start = hasTime
+        ? lateNight ? `${task.due_date}T23:30` : `${task.due_date}T${task.due_time}`
+        : task.due_date
+
+      // Recurring tasks use rrule (same pattern as events)
+      if (task.recurrence_rule) {
+        const dtstart = hasTime ? `${task.due_date}T${task.due_time}` : task.due_date
+        return {
+          id: `task-${task.id}`,
+          title: task.title,
+          allDay: !hasTime,
+          backgroundColor: color,
+          borderColor: color,
+          textColor: '#fff',
+          rrule: {
+            freq: task.recurrence_rule.replace('FREQ=', '').toLowerCase(),
+            dtstart,
+          },
+          extendedProps: { type: 'task', dbTask: task },
+        }
+      }
+
       return {
         id: `task-${task.id}`,
-        title: `📋 ${task.title}`,
-        start: task.due_date,
-        allDay: true,
-        backgroundColor: color + '33',  // 20% opacity
+        title: task.title,
+        start,
+        end: lateNight ? `${task.due_date}T23:59` : undefined,
+        allDay: !hasTime,
+        backgroundColor: color,
         borderColor: color,
-        textColor: '#1e293b',
+        textColor: '#fff',
         extendedProps: { type: 'task', dbTask: task },
       }
     })

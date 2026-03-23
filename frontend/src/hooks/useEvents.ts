@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
+import { refreshSummary } from '@/lib/summaryRefresh'
 import type { Event, EventInsert } from '@/types/database'
 
 export function useEvents() {
@@ -28,7 +29,10 @@ export function useCreateEvent() {
       if (error) throw error
       return data as Event
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['events'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['events'] })
+      refreshSummary(qc)
+    },
   })
 }
 
@@ -45,7 +49,10 @@ export function useUpdateEvent() {
       if (error) throw error
       return data as Event
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['events'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['events'] })
+      refreshSummary(qc)
+    },
   })
 }
 
@@ -56,6 +63,9 @@ export function useDeleteEvent() {
       const { error } = await supabase.from('events').delete().eq('id', id)
       if (error) throw error
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['events'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['events'] })
+      refreshSummary(qc)
+    },
   })
 }

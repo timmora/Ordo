@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
+import { refreshSummary } from '@/lib/summaryRefresh'
 import type { Task, TaskInsert } from '@/types/database'
 
 export function useTasks() {
@@ -28,7 +29,10 @@ export function useCreateTask() {
       if (error) throw error
       return data as Task
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['tasks'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['tasks'] })
+      refreshSummary(qc)
+    },
   })
 }
 
@@ -45,7 +49,12 @@ export function useUpdateTask() {
       if (error) throw error
       return data as Task
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['tasks'] }),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ['tasks'] })
+      if ('status' in variables || 'due_date' in variables) {
+        refreshSummary(qc)
+      }
+    },
   })
 }
 
@@ -56,6 +65,9 @@ export function useDeleteTask() {
       const { error } = await supabase.from('tasks').delete().eq('id', id)
       if (error) throw error
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['tasks'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['tasks'] })
+      refreshSummary(qc)
+    },
   })
 }

@@ -32,6 +32,12 @@ class SubtaskSuggestion(BaseModel):
     estimated_minutes: int
 
 
+class DecomposeRequest(BaseModel):
+    description: str | None = None
+    file_content: str | None = None
+    file_name: str | None = None
+
+
 class DecomposeResponse(BaseModel):
     subtasks: list[SubtaskSuggestion]
 
@@ -41,6 +47,9 @@ def _build_user_prompt(
     course_name: str | None,
     due_date: str,
     estimated_hours: float | None,
+    description: str | None = None,
+    file_content: str | None = None,
+    file_name: str | None = None,
 ) -> str:
     today = date.today()
     try:
@@ -56,6 +65,22 @@ def _build_user_prompt(
         f"Course: {course_name or 'N/A'}",
         f"Due: {due_date} ({days_remaining} days from now)",
         f"Estimated total effort: {estimated_hours or 'not specified'} hours",
+    ]
+
+    if description:
+        lines += ["", f"Student's description: {description}"]
+
+    if file_content:
+        # ~4 chars per token on average; keep file content under ~50k tokens
+        # to leave room for system prompt, task context, and response (200k limit)
+        max_chars = 200_000
+        truncated = file_content[:max_chars]
+        if len(file_content) > max_chars:
+            truncated += "\n\n[... content truncated for length ...]"
+        label = f"Attached file ({file_name})" if file_name else "Attached file"
+        lines += ["", f"{label}:", "---", truncated, "---"]
+
+    lines += [
         "",
         'Return ONLY a JSON array. Each element: {"title": "...", "estimated_minutes": N}',
     ]
@@ -85,7 +110,11 @@ def _parse_subtasks(text: str) -> list[SubtaskSuggestion]:
 
 
 @router.post("/tasks/{task_id}/decompose", response_model=DecomposeResponse)
-async def decompose_task(task_id: str, user_id: str = Depends(get_current_user)):
+async def decompose_task(
+    task_id: str,
+    body: DecomposeRequest = DecomposeRequest(),
+    user_id: str = Depends(get_current_user),
+):
     # Initialize clients
     sb = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
     ai = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
@@ -109,6 +138,9 @@ async def decompose_task(task_id: str, user_id: str = Depends(get_current_user))
         course_name=course_name,
         due_date=task["due_date"],
         estimated_hours=task.get("estimated_hours"),
+        description=body.description,
+        file_content=body.file_content,
+        file_name=body.file_name,
     )
 
     # Call Anthropic Claude

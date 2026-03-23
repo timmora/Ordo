@@ -4,9 +4,16 @@ import type { SubtaskSuggestion } from '@/types/database'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
 
+interface DecomposeInput {
+  taskId: string
+  description?: string
+  fileContent?: string
+  fileName?: string
+}
+
 export function useDecompose() {
   return useMutation({
-    mutationFn: async (taskId: string): Promise<SubtaskSuggestion[]> => {
+    mutationFn: async ({ taskId, description, fileContent, fileName }: DecomposeInput): Promise<SubtaskSuggestion[]> => {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) throw new Error('Not authenticated')
 
@@ -16,6 +23,7 @@ export function useDecompose() {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
+        body: JSON.stringify({ description, file_content: fileContent, file_name: fileName }),
       })
 
       if (!res.ok) {
