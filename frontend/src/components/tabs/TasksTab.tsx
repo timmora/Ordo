@@ -19,6 +19,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { GripVertical } from 'lucide-react'
 import { todayStr, priorityVariant, relativeDueLabel, formatTime24to12 } from '@/lib/dateUtils'
+import { toast } from 'sonner'
 import type { DecomposeContext } from '@/components/tasks/TaskModal'
 import type { Task, Subtask } from '@/types/database'
 
@@ -142,16 +143,22 @@ export function TasksTab({ onTaskClick, onNewTask, onDecompose }: Props) {
   const clearSelection = () => { setSelectedIds(new Set()); setSelectMode(false) }
 
   const bulkMarkDone = () => {
+    const count = selectedIds.size
     bulkUpdate.mutate({ ids: [...selectedIds], patch: { status: 'done' } })
     clearSelection()
+    toast.success(`${count} task${count > 1 ? 's' : ''} marked done`)
   }
   const bulkSetPriority = (p: 'high' | 'medium' | 'low') => {
+    const count = selectedIds.size
     bulkUpdate.mutate({ ids: [...selectedIds], patch: { priority: p } })
     clearSelection()
+    toast.success(`${count} task${count > 1 ? 's' : ''} set to ${p} priority`)
   }
   const bulkDeleteSelected = () => {
+    const count = selectedIds.size
     bulkDelete.mutate([...selectedIds])
     clearSelection()
+    toast.success(`${count} task${count > 1 ? 's' : ''} deleted`)
   }
 
   const courseMap = useMemo(

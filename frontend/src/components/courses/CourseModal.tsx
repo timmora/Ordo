@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { ChevronDownIcon } from 'lucide-react'
 import { useCreateCourse, useUpdateCourse, useDeleteCourse } from '@/hooks/useCourses'
+import { toast } from 'sonner'
 import type { Course, ScheduleBlock } from '@/types/database'
 
 const PRESET_COLORS = [
@@ -83,9 +84,11 @@ export function CourseModal({ open, onClose, course, onCourseCreated }: Props) {
       setError('')
       if (course) {
         await updateCourse.mutateAsync({ id: course.id, name: name.trim(), color, schedule })
+        toast.success('Course updated')
       } else {
         const created = await createCourse.mutateAsync({ name: name.trim(), color, schedule })
         onCourseCreated?.(created)
+        toast.success('Course created')
       }
       onClose()
     } catch (err) {
@@ -98,6 +101,7 @@ export function CourseModal({ open, onClose, course, onCourseCreated }: Props) {
     try {
       setError('')
       await deleteCourse.mutateAsync(course.id)
+      toast.success('Course deleted')
       onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete course')

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { Toaster } from 'sonner'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { Session } from '@supabase/supabase-js'
 import type { DateSelectArg } from '@fullcalendar/core'
@@ -435,6 +436,7 @@ export default function App() {
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <AppWithAuth />
+        <Toaster position="bottom-right" richColors closeButton />
       </QueryClientProvider>
     </ErrorBoundary>
   )

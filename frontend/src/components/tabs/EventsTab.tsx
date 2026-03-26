@@ -7,6 +7,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { ChevronDownIcon, CalendarPlus, Trash2, X } from 'lucide-react'
 import { formatDate, todayStr, formatTime } from '@/lib/dateUtils'
+import { toast } from 'sonner'
 import type { Event } from '@/types/database'
 
 type FilterTab = 'upcoming' | 'past' | 'all'
@@ -36,7 +37,9 @@ export function EventsTab({ onEventClick, onNewEvent }: Props) {
   const clearSelection = () => { setSelectedIds(new Set()); setSelectMode(false) }
 
   const bulkDeleteSelected = () => {
+    const count = selectedIds.size
     bulkDelete.mutate([...selectedIds])
+    toast.success(`${count} event${count > 1 ? 's' : ''} deleted`)
     clearSelection()
   }
 

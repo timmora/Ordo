@@ -20,6 +20,7 @@ import { Calendar } from '@/components/ui/calendar'
 import { CalendarIcon, Clock8Icon } from 'lucide-react'
 import { useCourses, useCreateCourse } from '@/hooks/useCourses'
 import { useCreateEvent, useUpdateEvent, useDeleteEvent } from '@/hooks/useEvents'
+import { toast } from 'sonner'
 import type { Event, EventInsert } from '@/types/database'
 
 const PRESET_COLORS = [
@@ -131,8 +132,10 @@ export function EventModal({ open, onClose, event, defaultStart, defaultEnd, def
       setError('')
       if (event) {
         await updateEvent.mutateAsync({ id: event.id, ...buildPayload() })
+        toast.success('Event updated')
       } else {
         await createEvent.mutateAsync(buildPayload())
+        toast.success('Event created')
       }
       onClose()
     } catch (err) {
@@ -145,6 +148,7 @@ export function EventModal({ open, onClose, event, defaultStart, defaultEnd, def
     try {
       setError('')
       await deleteEvent.mutateAsync(event.id)
+      toast.success('Event deleted')
       onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete event')

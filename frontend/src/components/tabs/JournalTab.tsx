@@ -9,6 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { parse, format } from 'date-fns'
+import { toast } from 'sonner'
 import { JOURNAL_SECTIONS, MOOD_OPTIONS, ENERGY_OPTIONS, matchResponses } from '@/lib/journalPrompts'
 import { MoodEnergySelector } from '@/components/journal/MoodEnergySelector'
 import { DayStatsBanner } from '@/components/journal/DayStatsBanner'
@@ -92,6 +93,7 @@ export function JournalTab() {
       )
     if (error) {
       console.error('Journal save failed:', error)
+      toast.error('Failed to save journal entry')
       setSaveStatus('idle')
     } else {
       setSaveStatus('saved')

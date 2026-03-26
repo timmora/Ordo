@@ -18,6 +18,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Play, Pause, RotateCcw, Settings } from 'lucide-react'
+import { toast } from 'sonner'
 
 type Mode = 'focus' | 'break'
 
@@ -127,6 +128,8 @@ export function FocusTab() {
             setRunning(false)
             // Save full session
             logSession(durationsRef.current[modeRef.current] * 60)
+            const label = modeRef.current === 'focus' ? 'Focus' : 'Break'
+            toast.success(`${label} session complete!`)
             return 0
           }
           return s - 1

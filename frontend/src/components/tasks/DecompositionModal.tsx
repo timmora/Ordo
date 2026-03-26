@@ -41,6 +41,7 @@ const restrictToVerticalWithinContainer: Modifier = ({
     y: Math.min(Math.max(transform.y, minY), maxY),
   }
 }
+import { toast } from 'sonner'
 import { useDecompose } from '@/hooks/useDecompose'
 import { useSubtasks, useCreateSubtasks, useDeleteTaskSubtasks } from '@/hooks/useSubtasks'
 import type { Task } from '@/types/database'
@@ -212,6 +213,10 @@ export function DecompositionModal({ open, onClose, task, initialDescription, in
               estimated_minutes: s.estimated_minutes,
             }))
           )
+          toast.success(`Generated ${suggestions.length} subtask${suggestions.length !== 1 ? 's' : ''}`)
+        },
+        onError: () => {
+          toast.error('Failed to generate subtasks')
         },
       }
     )
@@ -270,6 +275,7 @@ export function DecompositionModal({ open, onClose, task, initialDescription, in
     }))
 
     await createSubtasks.mutateAsync(inserts)
+    toast.success(`${inserts.length} subtask${inserts.length !== 1 ? 's' : ''} saved`)
     onClose()
   }
 

@@ -23,6 +23,7 @@ import { useCourses, useCreateCourse } from '@/hooks/useCourses'
 import { useCreateTask, useUpdateTask, useDeleteTask } from '@/hooks/useTasks'
 import { useSubtasks } from '@/hooks/useSubtasks'
 import { SubtaskList } from '@/components/tasks/SubtaskList'
+import { toast } from 'sonner'
 import type { Task, TaskInsert } from '@/types/database'
 
 const PRESET_COLORS = [
@@ -138,8 +139,10 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
       setError('')
       if (task) {
         await updateTask.mutateAsync({ id: task.id, ...buildPayload() })
+        toast.success('Task updated')
       } else {
         await createTask.mutateAsync(buildPayload())
+        toast.success('Task created')
       }
       onClose()
     } catch (err) {
@@ -152,6 +155,7 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
     try {
       setError('')
       const created = await createTask.mutateAsync(buildPayload())
+      toast.success('Task created')
       onClose()
       onDecompose({
         task: created,
@@ -169,6 +173,7 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
     try {
       setError('')
       await deleteTask.mutateAsync(task.id)
+      toast.success('Task deleted')
       onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete task')
