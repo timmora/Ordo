@@ -27,10 +27,12 @@ export function useUpsertJournalEntry() {
       date: string
       responses: JournalPromptResponse[]
     }) => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('Not authenticated')
       const { data, error } = await supabase
         .from('journal_entries')
         .upsert(
-          { date, responses, updated_at: new Date().toISOString() },
+          { user_id: user.id, date, responses, updated_at: new Date().toISOString() },
           { onConflict: 'user_id,date' }
         )
         .select()

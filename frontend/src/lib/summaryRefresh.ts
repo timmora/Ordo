@@ -1,32 +1,45 @@
 import type { QueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
+import { BACKEND_URL } from '@/lib/backendFetch'
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
+let debounceTimer: ReturnType<typeof setTimeout> | null = null
+let abortController: AbortController | null = null
 
 /**
- * Force-regenerate the daily briefing in the background.
- * Called from mutation onSuccess hooks so the summary stays reactive.
+ * Debounced, deduplicated background summary regeneration.
+ * Called from mutation hooks so the daily briefing stays reactive.
+ *
+ * - Debounced at 3s so rapid checkbox toggles produce a single AI call
+ * - Aborts any in-flight request before starting a new one (no race conditions)
  */
-export async function refreshSummary(qc: QueryClient) {
-  try {
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) return
+export function refreshSummary(qc: QueryClient) {
+  if (debounceTimer) clearTimeout(debounceTimer)
+  debounceTimer = setTimeout(async () => {
+    // Abort previous in-flight request
+    if (abortController) abortController.abort()
+    abortController = new AbortController()
 
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
-    const params = new URLSearchParams({ tz, force: 'true' })
-    const res = await fetch(`${BACKEND_URL}/api/overview-summary?${params}`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${session.access_token}`,
-        'Content-Type': 'application/json',
-      },
-    })
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) return
 
-    if (res.ok) {
-      const data = await res.json()
-      qc.setQueryData(['overview-summary'], data)
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+      const params = new URLSearchParams({ tz, force: 'true' })
+      const res = await fetch(`${BACKEND_URL}/api/overview-summary?${params}`, {
+        method: 'POST',
+        signal: abortController.signal,
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (res.ok) {
+        const data = await res.json()
+        qc.setQueryData(['overview-summary'], data)
+      }
+    } catch {
+      // Silently fail — aborted requests and network errors are fine
     }
-  } catch {
-    // Silently fail — summary will refresh on next page load
-  }
+  }, 3000)
 }

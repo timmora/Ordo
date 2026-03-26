@@ -1,19 +1,16 @@
 import json
-import os
-from zoneinfo import ZoneInfo
+from datetime import time
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import anthropic
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from supabase import create_client
 
 from .auth import get_current_user
+from .config import get_anthropic, get_supabase
+from .utils import extract_text, parse_ai_json
 
 router = APIRouter(prefix="/api")
-
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
-SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 
 SYSTEM_PROMPT = """You are a concise, supportive study coach embedded in a student productivity app.
 Given the student's current tasks, events, focus session stats, and journal entries, produce a short daily briefing.
@@ -25,6 +22,7 @@ Rules:
   "tip" (string, 1 sentence: a personalized productivity tip based on their data)
 - Be specific to their actual tasks and courses, not generic.
 - Keep the tone warm but brief — like a smart friend checking in.
+- Do NOT start with time-of-day greetings like "Good morning", "Good afternoon", "Good evening", or "Good night". Use a time-neutral greeting instead.
 - Do NOT use markdown or formatting. Plain text only."""
 
 
@@ -40,23 +38,29 @@ async def overview_summary(
     force: bool = Query(default=False),
     user_id: str = Depends(get_current_user),
 ):
-    sb = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    sb = get_supabase()
 
-    from datetime import date, timedelta
+    from datetime import date, datetime as dt, timedelta
 
-    today = date.today()
+    try:
+        local_tz = ZoneInfo(tz)
+    except (ZoneInfoNotFoundError, KeyError):
+        local_tz = ZoneInfo("America/Chicago")
+
+    now_local = dt.now(local_tz)
+    today = now_local.date()
 
     # Check cache first (unless force regeneration requested)
     if not force:
         cached = sb.table("daily_summaries").select("summary, tip, stats").eq("user_id", user_id).eq("date", str(today)).maybe_single().execute()
-        if cached.data:
+        if cached and cached.data:
             return SummaryResponse(
                 summary=cached.data["summary"],
                 stats=cached.data["stats"],
                 tip=cached.data["tip"],
             )
 
-    ai = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    ai = get_anthropic()
     week_ago = today - timedelta(days=7)
     week_ahead = today + timedelta(days=7)
 
@@ -78,13 +82,6 @@ async def overview_summary(
     course_map = {c["id"]: c["name"] for c in courses}
 
     # Convert event times to local timezone for accurate AI interpretation
-    from datetime import datetime as dt
-
-    try:
-        local_tz = ZoneInfo(tz)
-    except Exception:
-        local_tz = ZoneInfo("America/Chicago")
-
     def to_local(iso_str: str | None) -> str | None:
         if not iso_str:
             return None
@@ -105,16 +102,42 @@ async def overview_summary(
             "status": s["status"],
         })
 
-    # Enrich tasks with course names and subtasks
+    # Enrich tasks with course names, subtasks, and overdue status
+    today_str = str(today)
     for t in tasks:
         t["course"] = course_map.get(t.get("course_id"), None)
         task_subtasks = subtask_map.get(t.get("id"), [])
         if task_subtasks:
             t["subtasks"] = task_subtasks
+        # Mark overdue / due today / upcoming
+        if t.get("status") == "done":
+            t["time_status"] = "done"
+        elif t.get("due_date", "") < today_str:
+            t["time_status"] = "overdue"
+        elif t.get("due_date", "") == today_str:
+            if t.get("due_time"):
+                try:
+                    h, m = t["due_time"].split(":")
+                    due_dt = dt.combine(today, time(int(h), int(m)), tzinfo=local_tz)
+                    t["time_status"] = "overdue" if now_local > due_dt else "due_today"
+                except Exception:
+                    t["time_status"] = "due_today"
+            else:
+                t["time_status"] = "due_today"
+        else:
+            t["time_status"] = "upcoming"
         # Remove id and course_id from AI context
         t.pop("id", None)
     for e in events:
         e["course"] = course_map.get(e.get("course_id"), None)
+        # Determine if event has already passed
+        raw_end = e.get("end_time") or e.get("start_time")
+        if raw_end and not e.get("all_day"):
+            try:
+                end_dt = dt.fromisoformat(raw_end).astimezone(local_tz)
+                e["status"] = "past" if end_dt < now_local else "upcoming"
+            except Exception:
+                pass
         e["start_time"] = to_local(e.get("start_time"))
         e["end_time"] = to_local(e.get("end_time"))
 
@@ -125,7 +148,9 @@ async def overview_summary(
     tasks_completed = len([t for t in tasks if t["status"] == "done"])
     tasks_total = len(tasks)
 
-    user_prompt = f"""Today is {today.strftime('%A, %B %d, %Y')}.
+    user_prompt = f"""Today is {today.strftime('%A, %B %d, %Y')}. Current time is {now_local.strftime('%I:%M %p')}.
+Events marked "past" have already ended — do not refer to them as upcoming.
+Tasks have a "time_status" field: "overdue" means past due, "due_today" means due today but not yet overdue, "upcoming" means due in the future, "done" means completed. Respect these statuses in your briefing.
 
 Tasks (this week):
 {json.dumps(tasks, indent=2, default=str)}
@@ -149,14 +174,8 @@ Return ONLY a JSON object with keys: "summary", "stats", "tip"."""
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_prompt}],
         )
-        response_text = message.content[0].text
-        cleaned = response_text.strip()
-        if cleaned.startswith("```"):
-            lines = cleaned.split("\n")
-            lines = [l for l in lines if not l.strip().startswith("```")]
-            cleaned = "\n".join(lines).strip()
-
-        data = json.loads(cleaned)
+        response_text = extract_text(message)
+        data = parse_ai_json(response_text)
         result = SummaryResponse(
             summary=data.get("summary", ""),
             stats=data.get("stats", {"focus_hours": focus_hours, "tasks_completed": tasks_completed, "tasks_total": tasks_total}),
@@ -180,5 +199,5 @@ Return ONLY a JSON object with keys: "summary", "stats", "tip"."""
             stats={"focus_hours": focus_hours, "tasks_completed": tasks_completed, "tasks_total": tasks_total},
             tip="Try breaking large tasks into smaller subtasks to build momentum.",
         )
-    except anthropic.APIError as e:
-        raise HTTPException(status_code=502, detail=f"AI service error: {e}")
+    except anthropic.APIError:
+        raise HTTPException(status_code=502, detail="AI service temporarily unavailable")

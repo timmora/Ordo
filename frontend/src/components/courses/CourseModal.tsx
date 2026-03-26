@@ -4,6 +4,10 @@ import { Plus, Trash2, Clock8Icon } from 'lucide-react'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog'
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -25,16 +29,20 @@ interface Props {
   open: boolean
   onClose: () => void
   course?: Course
+  /** Called with the newly created course when used as a stacked dialog */
+  onCourseCreated?: (course: Course) => void
 }
 
 const emptyBlock = (): ScheduleBlock => ({ day: 'Mon', start: '09:00', end: '10:00', location: '' })
 
-export function CourseModal({ open, onClose, course }: Props) {
+export function CourseModal({ open, onClose, course, onCourseCreated }: Props) {
   const [name, setName] = useState('')
   const [color, setColor] = useState(PRESET_COLORS[0])
   const [schedule, setSchedule] = useState<ScheduleBlock[]>([])
   const [pickerOpen, setPickerOpen] = useState(false)
   const [customColors, setCustomColors] = useState<string[]>([])
+  const [error, setError] = useState('')
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   const createCourse = useCreateCourse()
   const updateCourse = useUpdateCourse()
@@ -53,6 +61,8 @@ export function CourseModal({ open, onClose, course }: Props) {
       setCustomColors([])
     }
     setPickerOpen(false)
+    setError('')
+    setConfirmDelete(false)
   }, [course, open])
 
   function addBlock() {
@@ -69,23 +79,35 @@ export function CourseModal({ open, onClose, course }: Props) {
 
   async function handleSave() {
     if (!name.trim()) return
-    if (course) {
-      await updateCourse.mutateAsync({ id: course.id, name: name.trim(), color, schedule })
-    } else {
-      await createCourse.mutateAsync({ name: name.trim(), color, schedule })
+    try {
+      setError('')
+      if (course) {
+        await updateCourse.mutateAsync({ id: course.id, name: name.trim(), color, schedule })
+      } else {
+        const created = await createCourse.mutateAsync({ name: name.trim(), color, schedule })
+        onCourseCreated?.(created)
+      }
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save course')
     }
-    onClose()
   }
 
   async function handleDelete() {
     if (!course) return
-    await deleteCourse.mutateAsync(course.id)
-    onClose()
+    try {
+      setError('')
+      await deleteCourse.mutateAsync(course.id)
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete course')
+    }
   }
 
   const isPending = createCourse.isPending || updateCourse.isPending
 
   return (
+    <>
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
@@ -219,11 +241,13 @@ export function CourseModal({ open, onClose, course }: Props) {
               ))}
             </div>
           </div>
+
+          {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
 
         <DialogFooter className="flex justify-between">
           {course && (
-            <Button variant="destructive" onClick={handleDelete} disabled={deleteCourse.isPending}>
+            <Button variant="destructive" onClick={() => setConfirmDelete(true)} disabled={deleteCourse.isPending}>
               Delete
             </Button>
           )}
@@ -236,5 +260,23 @@ export function CourseModal({ open, onClose, course }: Props) {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete course?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This will remove &ldquo;{course?.name}&rdquo; and unlink it from all associated events and tasks. This cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction variant="destructive" onClick={handleDelete}>
+            Delete
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   )
 }

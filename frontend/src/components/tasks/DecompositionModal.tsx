@@ -320,7 +320,7 @@ export function DecompositionModal({ open, onClose, task, initialDescription, in
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".txt,.md,.pdf,.csv,.json,.html,.py,.js,.ts,.tex,.rtf"
+                  accept=".txt,.md,.csv,.json,.html,.py,.js,.ts,.tex,.rtf"
                   onChange={handleFileChange}
                   className="hidden"
                 />

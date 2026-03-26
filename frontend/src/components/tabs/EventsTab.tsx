@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react'
-import { useEvents } from '@/hooks/useEvents'
+import { useEvents, useBulkDeleteEvents } from '@/hooks/useEvents'
 import { useCourses } from '@/hooks/useCourses'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { ChevronDownIcon, CalendarPlus } from 'lucide-react'
+import { ChevronDownIcon, CalendarPlus, Trash2, X } from 'lucide-react'
+import { formatDate, todayStr, formatTime } from '@/lib/dateUtils'
 import type { Event } from '@/types/database'
 
 type FilterTab = 'upcoming' | 'past' | 'all'
@@ -15,30 +16,29 @@ interface Props {
   onNewEvent: () => void
 }
 
-const todayStr = () => {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
-function formatDate(dateStr: string) {
-  const d = new Date(dateStr + 'T00:00:00')
-  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-}
-
-function formatTime(iso: string) {
-  return new Date(iso).toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-  })
-}
-
 export function EventsTab({ onEventClick, onNewEvent }: Props) {
   const { data: events = [] } = useEvents()
   const { data: courses = [] } = useCourses()
+  const bulkDelete = useBulkDeleteEvents()
 
   const [filterTab, setFilterTab] = useState<FilterTab>('upcoming')
   const [courseFilter, setCourseFilter] = useState<string>('all')
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+
+  const toggleSelect = (id: string) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+
+  const clearSelection = () => { setSelectedIds(new Set()); setSelectMode(false) }
+
+  const bulkDeleteSelected = () => {
+    bulkDelete.mutate([...selectedIds])
+    clearSelection()
+  }
 
   const courseMap = useMemo(
     () => Object.fromEntries(courses.map((c) => [c.id, c])),
@@ -46,12 +46,19 @@ export function EventsTab({ onEventClick, onNewEvent }: Props) {
   )
 
   const filtered = useMemo(() => {
-    const today = todayStr()
+    const now = new Date()
 
     return events.filter((e) => {
-      const eventDate = e.start_time.slice(0, 10)
-      if (filterTab === 'upcoming' && eventDate < today) return false
-      if (filterTab === 'past' && eventDate >= today) return false
+      if (filterTab !== 'all') {
+        // Use end_time (or start_time) to determine if event has passed
+        const compareStr = e.end_time || e.start_time
+        const compareDate = new Date(compareStr)
+        const isPast = e.all_day
+          ? e.start_time.slice(0, 10) < todayStr()
+          : compareDate < now
+        if (filterTab === 'upcoming' && isPast) return false
+        if (filterTab === 'past' && !isPast) return false
+      }
       if (courseFilter !== 'all' && e.course_id !== courseFilter) return false
       return true
     })
@@ -68,10 +75,19 @@ export function EventsTab({ onEventClick, onNewEvent }: Props) {
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Events</h1>
-        <Button size="sm" onClick={onNewEvent}>
-          <CalendarPlus className="size-4 mr-1.5" />
-          New Event
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant={selectMode ? 'secondary' : 'outline'}
+            onClick={() => { if (selectMode) clearSelection(); else setSelectMode(true) }}
+          >
+            {selectMode ? 'Cancel' : 'Select'}
+          </Button>
+          <Button size="sm" onClick={onNewEvent}>
+            <CalendarPlus className="size-4 mr-1.5" />
+            New Event
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -115,6 +131,19 @@ export function EventsTab({ onEventClick, onNewEvent }: Props) {
         )}
       </div>
 
+      {/* Bulk action bar */}
+      {selectMode && selectedIds.size > 0 && (
+        <div className="flex items-center gap-2 rounded-lg border bg-card px-3 py-2 shadow-sm">
+          <span className="text-sm font-medium mr-1">{selectedIds.size} selected</span>
+          <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={bulkDeleteSelected}>
+            <Trash2 className="size-3.5 mr-1" /> Delete
+          </Button>
+          <button type="button" onClick={clearSelection} className="ml-auto p-1 text-muted-foreground hover:text-foreground">
+            <X className="size-4" />
+          </button>
+        </div>
+      )}
+
       {/* Event list */}
       {filtered.length === 0 ? (
         <div className="text-center py-16 text-muted-foreground text-sm">
@@ -130,8 +159,30 @@ export function EventsTab({ onEventClick, onNewEvent }: Props) {
               <div
                 key={event.id}
                 className="flex items-center gap-3 rounded-lg border bg-card px-3 py-2.5 hover:bg-muted/40 transition-colors cursor-pointer"
-                onClick={() => onEventClick(event)}
+                onClick={() => {
+                  if (selectMode) toggleSelect(event.id)
+                  else onEventClick(event)
+                }}
               >
+                {/* Select checkbox in select mode */}
+                {selectMode && (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); toggleSelect(event.id) }}
+                    className={`w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-colors ${
+                      selectedIds.has(event.id)
+                        ? 'bg-blue-500 border-blue-500'
+                        : 'border-muted-foreground/40 hover:border-blue-400'
+                    }`}
+                  >
+                    {selectedIds.has(event.id) && (
+                      <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </button>
+                )}
+
                 {/* Course color dot */}
                 {course && (
                   <span

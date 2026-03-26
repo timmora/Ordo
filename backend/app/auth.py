@@ -1,12 +1,15 @@
-import os
+import logging
 import jwt
 from jwt import PyJWKClient
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from app.config import SUPABASE_URL
+
+logger = logging.getLogger(__name__)
+
 security = HTTPBearer()
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 jwks_client = PyJWKClient(f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json")
 
 
@@ -25,6 +28,9 @@ async def get_current_user(
         )
         user_id: str = payload["sub"]
         return user_id
-    except Exception as e:
-        print(f"JWT validation failed: {type(e).__name__}: {e}")
+    except (jwt.ExpiredSignatureError, jwt.InvalidAudienceError, jwt.DecodeError) as e:
+        logger.warning("JWT validation failed: %s: %s", type(e).__name__, e)
         raise HTTPException(status_code=401, detail="Invalid or expired token")
+    except Exception as e:
+        logger.error("Unexpected auth error: %s: %s", type(e).__name__, e)
+        raise HTTPException(status_code=401, detail="Authentication service error")

@@ -1,71 +1,31 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useSupabaseQuery, useSupabaseInsert, useSupabaseUpdate, useSupabaseDelete } from './useSupabaseCrud'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { refreshSummary } from '@/lib/summaryRefresh'
+import { refreshSchedule } from '@/lib/scheduleRefresh'
 import type { Event, EventInsert } from '@/types/database'
+import type { QueryClient } from '@tanstack/react-query'
 
-export function useEvents() {
-  return useQuery({
-    queryKey: ['events'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('events')
-        .select('*')
-        .order('start_time')
-      if (error) throw error
-      return (data ?? []) as Event[]
-    },
-  })
+const eventSideEffects = (qc: QueryClient) => {
+  refreshSummary(qc)
+  refreshSchedule(qc)
 }
 
-export function useCreateEvent() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: async (input: EventInsert) => {
-      const { data, error } = await supabase
-        .from('events')
-        .insert(input)
-        .select()
-        .single()
-      if (error) throw error
-      return data as Event
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['events'] })
-      refreshSummary(qc)
-    },
-  })
-}
+export const useEvents = () => useSupabaseQuery<Event>('events', ['events'], 'start_time')
+export const useCreateEvent = () => useSupabaseInsert<EventInsert, Event>('events', [['events']], eventSideEffects)
+export const useUpdateEvent = () => useSupabaseUpdate<Event>('events', [['events']], eventSideEffects)
+export const useDeleteEvent = () => useSupabaseDelete('events', [['events']], eventSideEffects)
 
-export function useUpdateEvent() {
+export function useBulkDeleteEvents() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({ id, ...patch }: Partial<Event> & { id: string }) => {
-      const { data, error } = await supabase
-        .from('events')
-        .update(patch)
-        .eq('id', id)
-        .select()
-        .single()
-      if (error) throw error
-      return data as Event
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['events'] })
-      refreshSummary(qc)
-    },
-  })
-}
-
-export function useDeleteEvent() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from('events').delete().eq('id', id)
+    mutationFn: async (ids: string[]) => {
+      const { error } = await supabase.from('events').delete().in('id', ids)
       if (error) throw error
     },
-    onSuccess: () => {
+    onSettled: () => {
       qc.invalidateQueries({ queryKey: ['events'] })
-      refreshSummary(qc)
+      eventSideEffects(qc)
     },
   })
 }

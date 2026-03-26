@@ -44,6 +44,9 @@ export function SubtaskList({ taskId }: Props) {
             >
               <button
                 type="button"
+                role="checkbox"
+                aria-checked={complete}
+                aria-label={`Mark subtask "${s.title}" as ${complete ? 'incomplete' : 'complete'}`}
                 onClick={() => toggleStatus(s.id, s.status, i)}
                 disabled={!unlocked}
                 className={`w-3.5 h-3.5 rounded border-2 shrink-0 flex items-center justify-center transition-colors ${

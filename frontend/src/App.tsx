@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { Session } from '@supabase/supabase-js'
 import type { DateSelectArg } from '@fullcalendar/core'
@@ -8,6 +8,8 @@ import { EventModal } from '@/components/events/EventModal'
 import { TaskModal } from '@/components/tasks/TaskModal'
 import { DecompositionModal } from '@/components/tasks/DecompositionModal'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
+import { ScheduleBanner } from '@/components/ScheduleBanner'
+import { SettingsModal } from '@/components/settings/SettingsModal'
 import { OverviewTab } from '@/components/tabs/OverviewTab'
 import { CalendarTab } from '@/components/tabs/CalendarTab'
 import { TasksTab } from '@/components/tabs/TasksTab'
@@ -29,6 +31,7 @@ import {
   BookOpen,
   PanelLeftClose,
   PanelLeftOpen,
+  Settings,
 } from 'lucide-react'
 import type { DecomposeContext } from '@/components/tasks/TaskModal'
 import type { Event, Task } from '@/types/database'
@@ -59,7 +62,38 @@ function MainApp() {
   const [decomposeModalOpen, setDecomposeModalOpen] = useState(false)
   const [decomposeTask, setDecomposeTask] = useState<Task | undefined>()
   const [decomposeContext, setDecomposeContext] = useState<Omit<DecomposeContext, 'task'>>({})
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
+  // Lazy keep-alive: track which tabs have been visited so they mount on first visit then stay alive
+  const [visitedTabs, setVisitedTabs] = useState<Set<Tab>>(() => new Set([activeTab]))
+  const switchTab = useCallback((tab: Tab) => {
+    setActiveTab(tab)
+    setVisitedTabs((prev) => prev.has(tab) ? prev : new Set(prev).add(tab))
+  }, [])
+
+  // Keyboard shortcuts: Ctrl+E (new event), Ctrl+T (new task), 1-6 (switch tabs)
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      // Skip if user is typing in an input/textarea
+      const tag = (e.target as HTMLElement).tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+
+      if ((e.ctrlKey || e.metaKey) && e.key === 'e') {
+        e.preventDefault()
+        openNewEvent()
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 't') {
+        e.preventDefault()
+        openNewTask()
+      } else if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+        const idx = parseInt(e.key, 10)
+        if (idx >= 1 && idx <= TABS.length) {
+          switchTab(TABS[idx - 1].id)
+        }
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   function handleDateSelect(arg: DateSelectArg) {
     setSelectedEvent(undefined)
@@ -158,8 +192,17 @@ function MainApp() {
           <CourseSidebar />
         </div>
 
-        {/* Sign out at bottom */}
-        <div className="mt-auto pt-2 border-t overflow-hidden">
+        {/* Settings + Sign out at bottom */}
+        <div className="mt-auto pt-2 border-t overflow-hidden space-y-1">
+          <button
+            type="button"
+            onClick={() => setSettingsOpen(true)}
+            className="flex items-center gap-2 w-full h-8 px-2 rounded-md text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors overflow-hidden"
+            title="Settings"
+          >
+            <Settings className="size-4 shrink-0" />
+            <span className={`whitespace-nowrap transition-opacity duration-200 ${sidebarOpen ? 'opacity-100' : 'opacity-0 w-0 overflow-hidden'}`}>Settings</span>
+          </button>
           <button
             type="button"
             onClick={handleSignOut}
@@ -182,7 +225,7 @@ function MainApp() {
               <button
                 key={tab.id}
                 type="button"
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => switchTab(tab.id)}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                   activeTab === tab.id
                     ? 'bg-accent text-accent-foreground'
@@ -196,31 +239,43 @@ function MainApp() {
           </nav>
         </header>
 
-        {/* Tab content */}
-        <main
-          className={`flex-1 overflow-auto ${
-            activeTab === 'calendar' ? 'px-3 pt-5 pb-3' : 'px-6 py-4'
-          }`}
-        >
-          {activeTab === 'overview' && (
-            <OverviewTab onTaskClick={handleTaskClick} onDecompose={handleDecompose} onNavigate={(tab) => setActiveTab(tab as Tab)} />
-          )}
-          {activeTab === 'calendar' && (
+        <ScheduleBanner />
+
+        {/* Tab content — lazy keep-alive: mount on first visit, then stay alive via CSS hidden */}
+        {visitedTabs.has('calendar') && (
+          <div className={`flex-1 overflow-auto px-3 pt-5 pb-3 ${activeTab === 'calendar' ? '' : 'hidden'}`}>
             <CalendarTab
               onDateSelect={handleDateSelect}
               onEventClick={handleEventClick}
               onTaskClick={handleTaskClick}
             />
-          )}
-          {activeTab === 'events' && (
+          </div>
+        )}
+        {visitedTabs.has('overview') && (
+          <div className={`flex-1 overflow-auto px-6 py-4 ${activeTab === 'overview' ? '' : 'hidden'}`}>
+            <OverviewTab onTaskClick={handleTaskClick} onDecompose={handleDecompose} onNavigate={(tab) => switchTab(tab as Tab)} />
+          </div>
+        )}
+        {visitedTabs.has('events') && (
+          <div className={`flex-1 overflow-auto px-6 py-4 ${activeTab === 'events' ? '' : 'hidden'}`}>
             <EventsTab onEventClick={handleEventClick} onNewEvent={openNewEvent} />
-          )}
-          {activeTab === 'tasks' && (
+          </div>
+        )}
+        {visitedTabs.has('tasks') && (
+          <div className={`flex-1 overflow-auto px-6 py-4 ${activeTab === 'tasks' ? '' : 'hidden'}`}>
             <TasksTab onTaskClick={handleTaskClick} onNewTask={openNewTask} onDecompose={handleDecompose} />
-          )}
-          {activeTab === 'focus' && <FocusTab />}
-          {activeTab === 'journal' && <JournalTab />}
-        </main>
+          </div>
+        )}
+        {visitedTabs.has('focus') && (
+          <div className={`flex-1 overflow-auto px-6 py-4 ${activeTab === 'focus' ? '' : 'hidden'}`}>
+            <FocusTab />
+          </div>
+        )}
+        {visitedTabs.has('journal') && (
+          <div className={`flex-1 overflow-auto px-6 py-4 ${activeTab === 'journal' ? '' : 'hidden'}`}>
+            <JournalTab />
+          </div>
+        )}
       </div>
 
       {/* Modals — always mounted at root */}
@@ -245,6 +300,10 @@ function MainApp() {
         initialDescription={decomposeContext.description}
         initialFileContent={decomposeContext.fileContent}
         initialFileName={decomposeContext.fileName}
+      />
+      <SettingsModal
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
       />
     </div>
   )

@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
+import { refreshSchedule } from '@/lib/scheduleRefresh'
 import type { Subtask, SubtaskInsert, SubtaskUpdate } from '@/types/database'
 
 export function useAllSubtasks() {
@@ -68,6 +69,7 @@ export function useCreateSubtasks() {
       if (taskId) qc.invalidateQueries({ queryKey: ['subtasks', taskId] })
       qc.invalidateQueries({ queryKey: ['subtasks', '_task_ids'] })
       qc.invalidateQueries({ queryKey: ['subtasks', '_all'] })
+      refreshSchedule(qc)
     },
   })
 }
@@ -85,9 +87,59 @@ export function useUpdateSubtask() {
       if (error) throw error
       return data as Subtask
     },
-    onSuccess: (data) => {
-      qc.invalidateQueries({ queryKey: ['subtasks', data.task_id] })
-      qc.invalidateQueries({ queryKey: ['subtasks', '_all'] })
+    onMutate: async (variables) => {
+      await qc.cancelQueries({ queryKey: ['subtasks'] })
+
+      // Snapshot all subtask queries for rollback
+      const snapshot = qc.getQueriesData({ queryKey: ['subtasks'] })
+
+      const apply = (list: Subtask[]) =>
+        list.map((s) => (s.id === variables.id ? { ...s, ...variables } : s))
+
+      // Optimistically update per-task array caches
+      for (const [key, data] of snapshot) {
+        if (Array.isArray(data)) {
+          qc.setQueryData(key, apply(data))
+        }
+      }
+
+      // Optimistically update the _all Map cache
+      const allMap = qc.getQueryData<Map<string, Subtask[]>>(['subtasks', '_all'])
+      if (allMap) {
+        const next = new Map<string, Subtask[]>()
+        for (const [taskId, subs] of allMap) {
+          next.set(taskId, apply(subs))
+        }
+        qc.setQueryData(['subtasks', '_all'], next)
+      }
+
+      return { snapshot }
+    },
+    onError: (_err, _vars, context) => {
+      for (const [key, data] of context?.snapshot ?? []) {
+        qc.setQueryData(key, data)
+      }
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['subtasks'] })
+      refreshSchedule(qc)
+    },
+  })
+}
+
+/** Reorder subtasks by updating order_index for each. */
+export function useReorderSubtasks() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (items: { id: string; order_index: number }[]) => {
+      // Batch update order indices
+      const promises = items.map(({ id, order_index }) =>
+        supabase.from('subtasks').update({ order_index }).eq('id', id)
+      )
+      await Promise.all(promises)
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['subtasks'] })
     },
   })
 }

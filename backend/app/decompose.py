@@ -1,19 +1,15 @@
 import json
-import os
 from datetime import date, datetime
 
 import anthropic
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
-from supabase import create_client
+from pydantic import BaseModel, Field
 
 from .auth import get_current_user
+from .config import get_anthropic, get_supabase
+from .utils import extract_text, parse_ai_json
 
 router = APIRouter(prefix="/api")
-
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
-SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 
 SYSTEM_PROMPT = """You are a study planning assistant for university students.
 When given a task, break it into concrete, actionable subtasks.
@@ -28,14 +24,14 @@ Rules:
 
 
 class SubtaskSuggestion(BaseModel):
-    title: str
-    estimated_minutes: int
+    title: str = Field(min_length=1, max_length=200)
+    estimated_minutes: int = Field(ge=5, le=240)
 
 
 class DecomposeRequest(BaseModel):
-    description: str | None = None
-    file_content: str | None = None
-    file_name: str | None = None
+    description: str | None = Field(default=None, max_length=10_000)
+    file_content: str | None = Field(default=None, max_length=500_000)
+    file_name: str | None = Field(default=None, max_length=255)
 
 
 class DecomposeResponse(BaseModel):
@@ -89,14 +85,7 @@ def _build_user_prompt(
 
 def _parse_subtasks(text: str) -> list[SubtaskSuggestion]:
     """Parse the AI response into subtask suggestions."""
-    cleaned = text.strip()
-    # Strip markdown code fences if present
-    if cleaned.startswith("```"):
-        lines = cleaned.split("\n")
-        lines = [l for l in lines if not l.strip().startswith("```")]
-        cleaned = "\n".join(lines).strip()
-
-    data = json.loads(cleaned)
+    data = parse_ai_json(text)
     if not isinstance(data, list):
         raise ValueError("Expected a JSON array")
 
@@ -116,8 +105,8 @@ async def decompose_task(
     user_id: str = Depends(get_current_user),
 ):
     # Initialize clients
-    sb = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-    ai = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    sb = get_supabase()
+    ai = get_anthropic()
 
     # Fetch task and verify ownership
     task_resp = sb.table("tasks").select("*").eq("id", task_id).eq("user_id", user_id).execute()
@@ -153,14 +142,14 @@ async def decompose_task(
                 system=SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": user_prompt}],
             )
-            response_text = message.content[0].text
+            response_text = extract_text(message)
             subtasks = _parse_subtasks(response_text)
             return DecomposeResponse(subtasks=subtasks)
         except (json.JSONDecodeError, ValueError, KeyError) as e:
             last_error = e
             continue
-        except anthropic.APIError as e:
-            raise HTTPException(status_code=502, detail=f"AI service error: {e}")
+        except anthropic.APIError:
+            raise HTTPException(status_code=502, detail="AI service temporarily unavailable")
 
     raise HTTPException(
         status_code=422,

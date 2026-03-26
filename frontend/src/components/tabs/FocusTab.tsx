@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
+import { todayStr } from '@/lib/dateUtils'
 import { useTasks } from '@/hooks/useTasks'
 import { useSubtasks } from '@/hooks/useSubtasks'
-import { useFocusSessions, useFocusSessionsByTask, useCreateFocusSession } from '@/hooks/useFocusSessions'
+import { useFocusSessions, useFocusSessionsByTask, useCreateFocusSession, useFocusStreak } from '@/hooks/useFocusSessions'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
@@ -54,12 +55,11 @@ function saveDurations(d: Record<Mode, number>) {
   localStorage.setItem(PREFS_KEY, JSON.stringify(d))
 }
 
-const todayStr = () => new Date().toISOString().slice(0, 10)
-
 export function FocusTab() {
   const { data: tasks = [] } = useTasks()
   const { data: sessions = [] } = useFocusSessions(todayStr())
   const createSession = useCreateFocusSession()
+  const { data: streak = 0 } = useFocusStreak()
 
   const [durations, setDurations] = useState<Record<Mode, number>>(loadDurations)
   const [mode, setMode] = useState<Mode>('focus')
@@ -341,9 +341,13 @@ export function FocusTab() {
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)] max-h-60 overflow-y-auto">
             <DropdownMenuGroup>
-              {pendingTasks.filter((t) => t.id !== selectedTaskId).map((t) => (
-                <DropdownMenuItem key={t.id} onSelect={() => { setSelectedTaskId(t.id); setSelectedSubtaskId('none') }}>{t.title}</DropdownMenuItem>
-              ))}
+              {pendingTasks.length === 0 ? (
+                <DropdownMenuItem disabled>No pending tasks</DropdownMenuItem>
+              ) : (
+                pendingTasks.filter((t) => t.id !== selectedTaskId).map((t) => (
+                  <DropdownMenuItem key={t.id} onSelect={() => { setSelectedTaskId(t.id); setSelectedSubtaskId('none') }}>{t.title}</DropdownMenuItem>
+                ))
+              )}
               {selectedTaskId !== 'none' && (
                 <>
                   <DropdownMenuSeparator />
@@ -367,19 +371,23 @@ export function FocusTab() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)] max-h-60 overflow-y-auto">
                 <DropdownMenuGroup>
-                  {subtasks.filter((s) => s.id !== selectedSubtaskId && s.status !== 'complete').map((s) => {
-                    const originalIndex = subtasks.indexOf(s)
-                    const unlocked = subtasks.slice(0, originalIndex).every((prev) => prev.status === 'complete')
-                    return (
-                      <DropdownMenuItem
-                        key={s.id}
-                        disabled={!unlocked}
-                        onSelect={() => setSelectedSubtaskId(s.id)}
-                      >
-                        {!unlocked ? '\uD83D\uDD12 ' : ''}{s.title}
-                      </DropdownMenuItem>
-                    )
-                  })}
+                  {pendingSubtasks.length === 0 ? (
+                    <DropdownMenuItem disabled>All subtasks complete</DropdownMenuItem>
+                  ) : (
+                    subtasks.filter((s) => s.id !== selectedSubtaskId && s.status !== 'complete').map((s) => {
+                      const originalIndex = subtasks.indexOf(s)
+                      const unlocked = subtasks.slice(0, originalIndex).every((prev) => prev.status === 'complete')
+                      return (
+                        <DropdownMenuItem
+                          key={s.id}
+                          disabled={!unlocked}
+                          onSelect={() => setSelectedSubtaskId(s.id)}
+                        >
+                          {!unlocked ? '\uD83D\uDD12 ' : ''}{s.title}
+                        </DropdownMenuItem>
+                      )
+                    })
+                  )}
                   {selectedSubtaskId !== 'none' && (
                     <>
                       <DropdownMenuSeparator />
@@ -394,7 +402,7 @@ export function FocusTab() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         <div className="rounded-lg border bg-card p-4">
           <p className="text-xs text-muted-foreground mb-1">Sessions today</p>
           <p className="text-2xl font-semibold">{sessionsToday}</p>
@@ -402,6 +410,10 @@ export function FocusTab() {
         <div className="rounded-lg border bg-card p-4">
           <p className="text-xs text-muted-foreground mb-1">Focus minutes</p>
           <p className="text-2xl font-semibold">{totalFocusMin}</p>
+        </div>
+        <div className="rounded-lg border bg-card p-4">
+          <p className="text-xs text-muted-foreground mb-1">Day streak</p>
+          <p className="text-2xl font-semibold">{streak > 0 ? `${streak}d` : '—'}</p>
         </div>
       </div>
     </div>

@@ -1,14 +1,17 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { useJournalEntry, useUpsertJournalEntry } from '@/hooks/useJournalEntries'
+import { useEffect, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { supabase } from '@/lib/supabase'
+import { useJournalEntry } from '@/hooks/useJournalEntries'
 import { useTasks } from '@/hooks/useTasks'
-import { useEvents } from '@/hooks/useEvents'
-import { useCourses } from '@/hooks/useCourses'
+import { useFocusSessions, useFocusStreak } from '@/hooks/useFocusSessions'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Calendar } from '@/components/ui/calendar'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { parse, format } from 'date-fns'
-import { getPromptsForDate, matchResponses } from '@/lib/journalPrompts'
+import { JOURNAL_SECTIONS, MOOD_OPTIONS, ENERGY_OPTIONS, matchResponses } from '@/lib/journalPrompts'
+import { MoodEnergySelector } from '@/components/journal/MoodEnergySelector'
+import { DayStatsBanner } from '@/components/journal/DayStatsBanner'
 import type { JournalPromptResponse } from '@/types/database'
 
 function formatDisplayDate(dateStr: string) {
@@ -23,90 +26,136 @@ function formatDisplayDate(dateStr: string) {
 function offsetDate(dateStr: string, days: number) {
   const d = new Date(dateStr + 'T00:00:00')
   d.setDate(d.getDate() + days)
-  return d.toISOString().slice(0, 10)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function buildPayload(
+  current: Record<string, string>,
+  orphaned: Array<{ prompt: string; response: string }>,
+): JournalPromptResponse[] | null {
+  const hasContent = JOURNAL_SECTIONS.some((s) => (current[s.promptKey] ?? '').length > 0)
+  if (!hasContent) return null
+  const payload: JournalPromptResponse[] = JOURNAL_SECTIONS.map((s) => ({
+    prompt: s.prompt,
+    promptKey: s.promptKey,
+    response: current[s.promptKey] ?? '',
+  }))
+  for (const o of orphaned) {
+    payload.push({ prompt: o.prompt, response: o.response })
+  }
+  return payload
 }
 
 export function JournalTab() {
-  const todayStr = new Date().toISOString().slice(0, 10)
+  const now = new Date()
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
   const [selectedDate, setSelectedDate] = useState(todayStr)
 
-  const { data: tasks = [] } = useTasks()
-  const { data: events = [] } = useEvents()
-  const { data: courses = [] } = useCourses()
-
-  const prompts = useMemo(
-    () => getPromptsForDate(selectedDate, tasks, events, courses),
-    [selectedDate, tasks, events, courses]
-  )
-
   const { data: entry } = useJournalEntry(selectedDate)
-  const upsert = useUpsertJournalEntry()
+  const queryClient = useQueryClient()
 
-  // Local state for textarea values + orphaned responses
-  const [responses, setResponses] = useState<string[]>(['', '', '', ''])
+  // Stats for today's banner
+  const isToday = selectedDate === todayStr
+  const isFuture = selectedDate > todayStr
+  const { data: tasks = [] } = useTasks()
+  const { data: sessions = [] } = useFocusSessions(selectedDate)
+  const { data: streak = 0 } = useFocusStreak()
+
+  const focusSessions = sessions.filter((s) => s.mode === 'focus')
+  const totalFocusMin = Math.round(focusSessions.reduce((sum, s) => sum + s.duration_seconds, 0) / 60)
+  const tasksTotal = tasks.filter((t) => t.due_date === selectedDate).length
+  const tasksCompleted = tasks.filter((t) => t.due_date === selectedDate && t.status === 'done').length
+
+  // Local state keyed by promptKey
+  const [responses, setResponses] = useState<Record<string, string>>({})
   const [orphaned, setOrphaned] = useState<Array<{ prompt: string; response: string }>>([])
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Cancel any pending save when date changes, BEFORE syncing new data
-  useEffect(() => {
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current)
-      saveTimerRef.current = null
+  // Synchronous refs — always up-to-date, safe for closures & flush
+  const responsesRef = useRef<Record<string, string>>({})
+  const orphanedRef = useRef<Array<{ prompt: string; response: string }>>([])
+  const dateRef = useRef(selectedDate)
+
+  // Direct Supabase save — bypasses React Query mutation to avoid dropped calls
+  async function save(date: string, data: Record<string, string>, orph: Array<{ prompt: string; response: string }>) {
+    const payload = buildPayload(data, orph)
+    if (!payload) return
+    setSaveStatus('saving')
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { setSaveStatus('idle'); return }
+    const { error } = await supabase
+      .from('journal_entries')
+      .upsert(
+        { user_id: user.id, date, responses: payload, updated_at: new Date().toISOString() },
+        { onConflict: 'user_id,date' },
+      )
+    if (error) {
+      console.error('Journal save failed:', error)
+      setSaveStatus('idle')
+    } else {
+      setSaveStatus('saved')
+      queryClient.invalidateQueries({ queryKey: ['journal_entries', date] })
     }
-    setSaveStatus('idle')
-  }, [selectedDate])
+  }
 
-  // Sync from DB whenever entry or prompts change
+  // Flush pending debounce & clear state on date change
+  useEffect(() => {
+    // Flush any pending textarea debounce for the *previous* date
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current)
+      debounceRef.current = null
+      // Save whatever was pending for the old date
+      save(dateRef.current, responsesRef.current, orphanedRef.current)
+    }
+    // Now update refs & clear state for the new date
+    dateRef.current = selectedDate
+    setSaveStatus('idle')
+    setResponses({})
+    setOrphaned([])
+    responsesRef.current = {}
+    orphanedRef.current = []
+  }, [selectedDate]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sync from DB whenever entry changes
   useEffect(() => {
     if (entry) {
-      const result = matchResponses(prompts, entry.responses)
+      const result = matchResponses(entry.responses)
       setResponses(result.responses)
       setOrphaned(result.orphaned)
+      responsesRef.current = result.responses
+      orphanedRef.current = result.orphaned
     } else {
-      setResponses(prompts.map(() => ''))
+      setResponses({})
       setOrphaned([])
+      responsesRef.current = {}
+      orphanedRef.current = []
     }
-  }, [entry, prompts])
+  }, [entry])
 
-  // Refs to capture current values for the debounced save closure
-  const dateRef = useRef(selectedDate)
-  const promptsRef = useRef(prompts)
-  const orphanedRef = useRef(orphaned)
-  useEffect(() => { dateRef.current = selectedDate }, [selectedDate])
-  useEffect(() => { promptsRef.current = prompts }, [prompts])
-  useEffect(() => { orphanedRef.current = orphaned }, [orphaned])
+  // Called by mood/energy selectors — saves immediately (no debounce)
+  function handleSelectorChange(promptKey: string, value: string) {
+    const next = { ...responsesRef.current, [promptKey]: value }
+    responsesRef.current = next
+    setResponses(next)
+    save(dateRef.current, next, orphanedRef.current)
+  }
 
-  function handleChange(idx: number, value: string) {
-    const next = [...responses]
-    next[idx] = value
+  // Called by textareas — debounced 1s
+  function handleTextChange(promptKey: string, value: string) {
+    const next = { ...responsesRef.current, [promptKey]: value }
+    responsesRef.current = next
     setResponses(next)
 
-    // Debounced auto-save
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    if (debounceRef.current) clearTimeout(debounceRef.current)
     setSaveStatus('saving')
-    saveTimerRef.current = setTimeout(() => {
-      const currentPrompts = promptsRef.current
-      const currentDate = dateRef.current
-      const currentOrphaned = orphanedRef.current
-      const payload: JournalPromptResponse[] = currentPrompts.map((p, i) => ({
-        prompt: p.prompt,
-        promptKey: p.promptKey,
-        response: next[i],
-      }))
-      // Preserve orphaned responses so they aren't lost
-      for (const o of currentOrphaned) {
-        payload.push({ prompt: o.prompt, response: o.response })
-      }
-      upsert.mutate(
-        { date: currentDate, responses: payload },
-        { onSuccess: () => setSaveStatus('saved') }
-      )
+    debounceRef.current = setTimeout(() => {
+      debounceRef.current = null
+      save(dateRef.current, responsesRef.current, orphanedRef.current)
     }, 1000)
   }
 
-  const isToday = selectedDate === todayStr
-  const isFuture = selectedDate > todayStr
+  const textSections = JOURNAL_SECTIONS.filter((s) => s.type === 'textarea')
 
   return (
     <div className="max-w-2xl mx-auto py-4 space-y-6">
@@ -161,7 +210,7 @@ export function JournalTab() {
       {/* Save status */}
       <div className="flex justify-end">
         <span className="text-xs text-muted-foreground">
-          {saveStatus === 'saving' && 'Saving…'}
+          {saveStatus === 'saving' && 'Saving\u2026'}
           {saveStatus === 'saved' && 'Saved'}
         </span>
       </div>
@@ -172,19 +221,47 @@ export function JournalTab() {
         </p>
       ) : (
         <div className="space-y-6">
-          {prompts.map((p, idx) => (
-            <div key={p.promptKey ?? p.prompt} className="space-y-2">
-              <p className="text-sm font-medium leading-snug">{p.prompt}</p>
+          {/* Section 1: Mood & Energy check-in */}
+          <div className="rounded-lg border bg-card p-4 space-y-4">
+            <p className="text-sm font-medium text-muted-foreground">Check-in</p>
+            <MoodEnergySelector
+              label="Mood"
+              options={MOOD_OPTIONS}
+              value={responses.mood ?? ''}
+              onChange={(v) => handleSelectorChange('mood', v)}
+            />
+            <MoodEnergySelector
+              label="Energy"
+              options={ENERGY_OPTIONS}
+              value={responses.energy ?? ''}
+              onChange={(v) => handleSelectorChange('energy', v)}
+            />
+          </div>
+
+          {/* Section 2: Day stats banner (today only) */}
+          {isToday && (
+            <DayStatsBanner
+              focusMinutes={totalFocusMin}
+              tasksCompleted={tasksCompleted}
+              tasksTotal={tasksTotal}
+              streak={streak}
+            />
+          )}
+
+          {/* Sections 3-5: Textarea prompts */}
+          {textSections.map((section) => (
+            <div key={section.promptKey} className="space-y-2">
+              <p className="text-sm font-medium leading-snug">{section.prompt}</p>
               <textarea
                 className="w-full min-h-[120px] rounded-md border bg-card px-3 py-2 text-sm resize-y placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                placeholder="Write your thoughts…"
-                value={responses[idx]}
-                onChange={(e) => handleChange(idx, e.target.value)}
+                placeholder={section.placeholder}
+                value={responses[section.promptKey] ?? ''}
+                onChange={(e) => handleTextChange(section.promptKey, e.target.value)}
               />
             </div>
           ))}
 
-          {/* Orphaned responses from deleted tasks/events */}
+          {/* Orphaned responses from old format entries */}
           {orphaned.length > 0 && (
             <div className="space-y-4 pt-4 border-t">
               <p className="text-xs text-muted-foreground">Previous responses</p>

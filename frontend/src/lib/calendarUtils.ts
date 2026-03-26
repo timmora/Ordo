@@ -1,5 +1,5 @@
 import type { EventInput } from '@fullcalendar/core'
-import type { Course, Event, Task } from '@/types/database'
+import type { Course, Event, Task, Subtask } from '@/types/database'
 
 // FullCalendar daysOfWeek uses: 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
 const DAY_MAP: Record<string, number> = {
@@ -124,6 +124,36 @@ export function tasksToFC(tasks: Task[], courses: Course[]): EventInput[] {
         borderColor: color,
         textColor: '#fff',
         extendedProps: { type: 'task', dbTask: task },
+      }
+    })
+}
+
+/** Convert scheduled subtasks → FullCalendar time-block EventInput[] */
+export function scheduledSubtasksToFC(
+  subtasks: Subtask[],
+  tasks: Task[],
+  courses: Course[],
+): EventInput[] {
+  const taskMap = new Map(tasks.map((t) => [t.id, t]))
+  const courseMap = new Map(courses.map((c) => [c.id, c]))
+
+  return subtasks
+    .filter((s) => s.scheduled_start && s.scheduled_end)
+    .map((s) => {
+      const task = taskMap.get(s.task_id)
+      const course = task?.course_id ? courseMap.get(task.course_id) : undefined
+      const color = course?.color ?? '#94a3b8'
+      const done = s.status === 'complete'
+
+      return {
+        id: `subtask-${s.id}`,
+        title: done ? `\u2713 ${s.title}` : s.title,
+        start: s.scheduled_start!,
+        end: s.scheduled_end!,
+        backgroundColor: done ? color + '15' : color + '40',
+        borderColor: done ? color + '60' : color,
+        textColor: done ? color + '80' : color,
+        extendedProps: { type: 'subtask', dbSubtask: s, dbTask: task },
       }
     })
 }

@@ -4,6 +4,10 @@ import { format, parse } from 'date-fns'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog'
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -53,6 +57,8 @@ export function EventModal({ open, onClose, event, defaultStart, defaultEnd, def
   const [endTime, setEndTime] = useState('')
   const [location, setLocation] = useState('')
   const [recurrence, setRecurrence] = useState<string>('none')
+  const [error, setError] = useState('')
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   useEffect(() => {
     if (event) {
@@ -82,9 +88,9 @@ export function EventModal({ open, onClose, event, defaultStart, defaultEnd, def
       setCourseId('none')
       setAllDay(defaultAllDay ?? false)
       setStartDate(defaultStart ? format(defaultStart, 'yyyy-MM-dd') : '')
-      setStartTime(defaultStart && !defaultAllDay ? format(defaultStart, 'HH:mm') : '09:00')
+      setStartTime(defaultStart && !defaultAllDay ? format(defaultStart, 'HH:mm') : '')
       setEndDate(defaultEnd ? format(defaultEnd, 'yyyy-MM-dd') : '')
-      setEndTime(defaultEnd && !defaultAllDay ? format(defaultEnd, 'HH:mm') : '10:00')
+      setEndTime(defaultEnd && !defaultAllDay ? format(defaultEnd, 'HH:mm') : '')
       setLocation('')
       setRecurrence('none')
       setAddingCourse(false)
@@ -93,6 +99,8 @@ export function EventModal({ open, onClose, event, defaultStart, defaultEnd, def
       setPickerOpen(false)
       setCustomColors([])
     }
+    setError('')
+    setConfirmDelete(false)
   }, [event, open, defaultStart, defaultEnd, defaultAllDay])
 
   function buildPayload(): EventInsert {
@@ -119,18 +127,28 @@ export function EventModal({ open, onClose, event, defaultStart, defaultEnd, def
 
   async function handleSave() {
     if (!title.trim() || !startDate) return
-    if (event) {
-      await updateEvent.mutateAsync({ id: event.id, ...buildPayload() })
-    } else {
-      await createEvent.mutateAsync(buildPayload())
+    try {
+      setError('')
+      if (event) {
+        await updateEvent.mutateAsync({ id: event.id, ...buildPayload() })
+      } else {
+        await createEvent.mutateAsync(buildPayload())
+      }
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save event')
     }
-    onClose()
   }
 
   async function handleDelete() {
     if (!event) return
-    await deleteEvent.mutateAsync(event.id)
-    onClose()
+    try {
+      setError('')
+      await deleteEvent.mutateAsync(event.id)
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete event')
+    }
   }
 
   const startDateParsed = startDate ? parse(startDate, 'yyyy-MM-dd', new Date()) : undefined
@@ -164,6 +182,7 @@ export function EventModal({ open, onClose, event, defaultStart, defaultEnd, def
   const isPending = createEvent.isPending || updateEvent.isPending
 
   return (
+    <>
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-md">
         <DialogHeader>
@@ -444,11 +463,13 @@ export function EventModal({ open, onClose, event, defaultStart, defaultEnd, def
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
+
+          {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
 
         <DialogFooter className="flex justify-between">
           {event && (
-            <Button variant="destructive" onClick={handleDelete} disabled={deleteEvent.isPending}>
+            <Button variant="destructive" onClick={() => setConfirmDelete(true)} disabled={deleteEvent.isPending}>
               Delete
             </Button>
           )}
@@ -461,5 +482,23 @@ export function EventModal({ open, onClose, event, defaultStart, defaultEnd, def
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete event?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This will permanently delete &ldquo;{event?.title}&rdquo;. This cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction variant="destructive" onClick={handleDelete}>
+            Delete
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   )
 }

@@ -8,8 +8,10 @@ import type { DateSelectArg, EventClickArg, EventContentArg } from '@fullcalenda
 import { useCourses } from '@/hooks/useCourses'
 import { useEvents } from '@/hooks/useEvents'
 import { useTasks, useUpdateTask } from '@/hooks/useTasks'
-import { dbEventsToFC, courseScheduleToFC, tasksToFC } from '@/lib/calendarUtils'
-import type { Event, Task } from '@/types/database'
+import { useAllSubtasks, useUpdateSubtask } from '@/hooks/useSubtasks'
+import { dbEventsToFC, courseScheduleToFC, tasksToFC, scheduledSubtasksToFC } from '@/lib/calendarUtils'
+import type { Event, Task, Subtask } from '@/types/database'
+import { useMemo } from 'react'
 
 interface CalendarViewProps {
   onDateSelect: (arg: DateSelectArg) => void
@@ -21,12 +23,20 @@ export function CalendarView({ onDateSelect, onEventClick, onTaskClick }: Calend
   const { data: courses = [] } = useCourses()
   const { data: events = [] } = useEvents()
   const { data: tasks = [] } = useTasks()
+  const { data: allSubtasksMap } = useAllSubtasks()
   const updateTask = useUpdateTask()
+  const updateSubtask = useUpdateSubtask()
+
+  const allSubtasks = useMemo(
+    () => Array.from(allSubtasksMap?.values() ?? []).flat(),
+    [allSubtasksMap],
+  )
 
   const fcEvents = [
     ...dbEventsToFC(events, courses),
     ...courseScheduleToFC(courses),
     ...tasksToFC(tasks, courses),
+    ...scheduledSubtasksToFC(allSubtasks, tasks, courses),
   ]
 
   function handleEventClick(arg: EventClickArg) {
@@ -37,48 +47,76 @@ export function CalendarView({ onDateSelect, onEventClick, onTaskClick }: Calend
     }
     if (type === 'event' && dbEvent) onEventClick(dbEvent)
     if (type === 'task' && dbTask) onTaskClick(dbTask)
+    if (type === 'subtask' && dbTask) onTaskClick(dbTask)
   }
 
   function renderEventContent(arg: EventContentArg) {
-    const { type, dbTask } = arg.event.extendedProps as {
+    const { type, dbTask, dbSubtask } = arg.event.extendedProps as {
       type: string
       dbTask?: Task
+      dbSubtask?: Subtask
     }
 
-    if (type === 'task' && dbTask) {
-      const done = dbTask.status === 'done'
+    if (type === 'subtask' && dbSubtask) {
+      const subDone = dbSubtask.status === 'complete'
+      const borderCol = arg.event.borderColor || '#94a3b8'
       return (
-        <div className="flex items-center gap-1.5 px-1 overflow-hidden">
+        <div className="flex items-center gap-1 px-1 overflow-hidden" style={{ borderLeft: `3px solid ${borderCol}` }}>
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation()
-              const btn = e.currentTarget
-              if (!done) {
-                btn.style.backgroundColor = 'white'
-                btn.style.borderWidth = '2px'
-              } else {
-                btn.style.backgroundColor = ''
-              }
-              updateTask.mutate({ id: dbTask.id, status: done ? 'todo' : 'done' })
+              updateSubtask.mutate({ id: dbSubtask.id, status: subDone ? 'pending' : 'complete' })
             }}
-            className="w-3.5 h-3.5 rounded-full shrink-0 flex items-center justify-center transition-all"
+            className="w-3 h-3 rounded shrink-0 flex items-center justify-center"
             style={{
-              borderWidth: '2px',
+              borderWidth: '1.5px',
               borderStyle: 'solid',
-              borderColor: 'white',
-              backgroundColor: done ? 'white' : undefined,
+              borderColor: borderCol,
+              backgroundColor: subDone ? borderCol : 'transparent',
             }}
-            onMouseEnter={(e) => { if (!done) e.currentTarget.style.borderWidth = '4px' }}
-            onMouseLeave={(e) => { e.currentTarget.style.borderWidth = '2px' }}
           >
-            {done && (
-              <svg className="w-2.5 h-2.5" style={{ color: arg.event.borderColor || '#94a3b8' }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+            {subDone && (
+              <svg className="w-2 h-2 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
               </svg>
             )}
           </button>
-          <span className={`truncate text-xs text-white ${done ? 'line-through opacity-60' : ''}`}>{arg.event.title}</span>
+          <span className={`truncate text-xs ${subDone ? 'line-through opacity-50' : ''}`} style={{ color: borderCol }}>
+            {dbSubtask.title}
+          </span>
+        </div>
+      )
+    }
+
+    if (type === 'task' && dbTask) {
+      const done = dbTask.status === 'done'
+      const borderCol = arg.event.borderColor || '#94a3b8'
+      return (
+        <div className="flex items-center gap-1 px-1 overflow-hidden">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              updateTask.mutate({ id: dbTask.id, status: done ? 'todo' : 'done' })
+            }}
+            className="w-3 h-3 rounded shrink-0 flex items-center justify-center"
+            style={{
+              borderWidth: '1.5px',
+              borderStyle: 'solid',
+              borderColor: 'white',
+              backgroundColor: done ? 'white' : 'transparent',
+            }}
+          >
+            {done && (
+              <svg className="w-2 h-2" style={{ color: borderCol }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            )}
+          </button>
+          <span className={`truncate text-xs text-white ${done ? 'line-through opacity-50' : ''}`}>
+            {arg.event.title}
+          </span>
         </div>
       )
     }
@@ -92,7 +130,17 @@ export function CalendarView({ onDateSelect, onEventClick, onTaskClick }: Calend
   }
 
   return (
-    <div className="h-full [&_.fc]:h-full [&_.fc-view-harness]:flex-1 [&_.fc-view-harness]:rounded-lg [&_.fc-view-harness]:overflow-hidden [&_.fc-scrollgrid]:rounded-lg fc-custom">
+    <div className="h-full flex flex-col [&_.fc]:flex-1 [&_.fc]:min-h-0 [&_.fc-view-harness]:flex-1 [&_.fc-view-harness]:rounded-lg [&_.fc-view-harness]:overflow-hidden [&_.fc-scrollgrid]:rounded-lg fc-custom">
+      {courses.length > 0 && (
+        <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 px-1 pb-2 text-xs text-muted-foreground">
+          {courses.map((c) => (
+            <span key={c.id} className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
+              {c.name}
+            </span>
+          ))}
+        </div>
+      )}
       <FullCalendar
         plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin, rrulePlugin, multiMonthPlugin]}
         initialView="timeGridWeek"

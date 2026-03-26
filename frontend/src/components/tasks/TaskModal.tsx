@@ -4,6 +4,10 @@ import { format, parse } from 'date-fns'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog'
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -65,6 +69,8 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
   const [description, setDescription] = useState('')
   const [fileName, setFileName] = useState('')
   const [fileContent, setFileContent] = useState('')
+  const [error, setError] = useState('')
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -94,6 +100,8 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
     setDescription('')
     setFileName('')
     setFileContent('')
+    setError('')
+    setConfirmDelete(false)
   }, [task, open, defaultDueDate])
 
   function buildPayload(): TaskInsert {
@@ -126,35 +134,51 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
 
   async function handleSave() {
     if (!title.trim() || !dueDate) return
-    if (task) {
-      await updateTask.mutateAsync({ id: task.id, ...buildPayload() })
-    } else {
-      await createTask.mutateAsync(buildPayload())
+    try {
+      setError('')
+      if (task) {
+        await updateTask.mutateAsync({ id: task.id, ...buildPayload() })
+      } else {
+        await createTask.mutateAsync(buildPayload())
+      }
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save task')
     }
-    onClose()
   }
 
   async function handleSaveAndDecompose() {
     if (!title.trim() || !dueDate || !onDecompose) return
-    const created = await createTask.mutateAsync(buildPayload())
-    onClose()
-    onDecompose({
-      task: created,
-      description: description.trim() || undefined,
-      fileContent: fileContent || undefined,
-      fileName: fileName || undefined,
-    })
+    try {
+      setError('')
+      const created = await createTask.mutateAsync(buildPayload())
+      onClose()
+      onDecompose({
+        task: created,
+        description: description.trim() || undefined,
+        fileContent: fileContent || undefined,
+        fileName: fileName || undefined,
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save task')
+    }
   }
 
   async function handleDelete() {
     if (!task) return
-    await deleteTask.mutateAsync(task.id)
-    onClose()
+    try {
+      setError('')
+      await deleteTask.mutateAsync(task.id)
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete task')
+    }
   }
 
   const isPending = createTask.isPending || updateTask.isPending
 
   return (
+    <>
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-md max-h-[85vh] flex flex-col">
         <DialogHeader>
@@ -410,7 +434,7 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".txt,.md,.pdf,.csv,.json,.html,.py,.js,.ts,.tex,.rtf"
+                  accept=".txt,.md,.csv,.json,.html,.py,.js,.ts,.tex,.rtf"
                   onChange={handleFileChange}
                   className="hidden"
                 />
@@ -446,13 +470,14 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" className="w-full justify-between font-normal">
-                    {{ todo: 'To Do', in_progress: 'To Do', done: 'Done' }[status]}
+                    {{ todo: 'To Do', in_progress: 'In Progress', done: 'Done' }[status]}
                     <ChevronDownIcon />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)]">
                   <DropdownMenuGroup>
-                    {status === 'done' && <DropdownMenuItem onSelect={() => setStatus('todo')}>To Do</DropdownMenuItem>}
+                    {status !== 'todo' && <DropdownMenuItem onSelect={() => setStatus('todo')}>To Do</DropdownMenuItem>}
+                    {status !== 'in_progress' && <DropdownMenuItem onSelect={() => setStatus('in_progress')}>In Progress</DropdownMenuItem>}
                     {status !== 'done' && <DropdownMenuItem onSelect={() => setStatus('done')}>Done</DropdownMenuItem>}
                   </DropdownMenuGroup>
                 </DropdownMenuContent>
@@ -461,12 +486,14 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
           )}
 
           {task && <SubtaskList taskId={task.id} />}
+
+          {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
 
         <DialogFooter className="flex justify-between">
           {task && (
             <div className="flex gap-2">
-              <Button variant="destructive" onClick={handleDelete} disabled={deleteTask.isPending}>
+              <Button variant="destructive" onClick={() => setConfirmDelete(true)} disabled={deleteTask.isPending}>
                 Delete
               </Button>
               {onDecompose && subtasks.length === 0 && (
@@ -499,5 +526,23 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete task?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This will permanently delete &ldquo;{task?.title}&rdquo; and all its subtasks. This cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction variant="destructive" onClick={handleDelete}>
+            Delete
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   )
 }

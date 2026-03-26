@@ -163,6 +163,33 @@ export interface SubtaskUpdate {
   status?: 'pending' | 'in_progress' | 'complete'
 }
 
+// User settings (capacity controls)
+export interface UserSettings {
+  id: string
+  user_id: string
+  daily_capacity_hours: number
+  schedule_start_time: string  // "HH:MM"
+  schedule_end_time: string    // "HH:MM"
+  created_at: string
+  updated_at: string
+}
+
+export interface UserSettingsUpdate {
+  daily_capacity_hours?: number
+  schedule_start_time?: string
+  schedule_end_time?: string
+}
+
+export interface ScheduleChange {
+  subtask_id: string
+  title: string
+  old_start: string | null
+  old_end: string | null
+  new_start: string | null
+  new_end: string | null
+  action: 'scheduled' | 'moved' | 'unscheduled'
+}
+
 // AI decomposition response (not persisted)
 export interface SubtaskSuggestion {
   title: string

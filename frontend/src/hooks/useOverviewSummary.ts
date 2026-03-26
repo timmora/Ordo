@@ -1,8 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useCallback } from 'react'
-import { supabase } from '@/lib/supabase'
-
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
+import { useCallback, useRef } from 'react'
+import { backendFetch } from '@/lib/backendFetch'
 
 export interface OverviewSummary {
   summary: string
@@ -15,41 +13,31 @@ export interface OverviewSummary {
 }
 
 async function fetchSummary(force: boolean): Promise<OverviewSummary> {
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) throw new Error('Not authenticated')
-
-  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
-  const params = new URLSearchParams({ tz, force: String(force) })
-  const res = await fetch(`${BACKEND_URL}/api/overview-summary?${params}`, {
+  return backendFetch<OverviewSummary>('/api/overview-summary', {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${session.access_token}`,
-      'Content-Type': 'application/json',
-    },
+    params: { force: String(force) },
   })
-
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new Error(body.detail || 'Failed to load summary')
-  }
-
-  return res.json()
 }
 
 export function useOverviewSummary() {
   const qc = useQueryClient()
+  const forceRef = useRef(false)
 
   const query = useQuery<OverviewSummary>({
     queryKey: ['overview-summary'],
-    queryFn: () => fetchSummary(false),
-    staleTime: Infinity, // never auto-refetch; only manual invalidation
+    queryFn: () => {
+      const force = forceRef.current
+      forceRef.current = false
+      return fetchSummary(force)
+    },
+    staleTime: Infinity,
     retry: 1,
   })
 
   /** Force-regenerate the summary (calls Claude again) */
   const regenerateSummary = useCallback(async () => {
-    const data = await fetchSummary(true)
-    qc.setQueryData(['overview-summary'], data)
+    forceRef.current = true
+    await qc.invalidateQueries({ queryKey: ['overview-summary'] })
   }, [qc])
 
   return { ...query, regenerateSummary }

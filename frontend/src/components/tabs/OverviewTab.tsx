@@ -6,8 +6,11 @@ import { useFocusSessions } from '@/hooks/useFocusSessions'
 import { useOverviewSummary } from '@/hooks/useOverviewSummary'
 import { LiveClock } from '@/components/LiveClock'
 import { Badge } from '@/components/ui/badge'
-import { useTasksWithSubtasks } from '@/hooks/useSubtasks'
-import { Sparkles, Loader2, RefreshCw } from 'lucide-react'
+import { useTasksWithSubtasks, useAllSubtasks } from '@/hooks/useSubtasks'
+import { useUserSettings } from '@/hooks/useUserSettings'
+import { useSchedule } from '@/hooks/useSchedule'
+import { Sparkles, Loader2, RefreshCw, CalendarSync } from 'lucide-react'
+import { formatDate, todayStr, formatTime, priorityVariant } from '@/lib/dateUtils'
 import type { DecomposeContext } from '@/components/tasks/TaskModal'
 import type { Task } from '@/types/database'
 
@@ -44,34 +47,30 @@ interface Props {
   onNavigate?: (tab: string) => void
 }
 
-const today = () => {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
-function priorityVariant(p: Task['priority']) {
-  if (p === 'high') return 'destructive'
-  if (p === 'medium') return 'secondary'
-  return 'outline'
-}
-
-function formatDate(dateStr: string) {
-  const d = new Date(dateStr + 'T00:00:00')
-  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-}
-
 export function OverviewTab({ onTaskClick, onDecompose, onNavigate }: Props) {
   const [view, setView] = useState<OverviewView>('today')
   const { data: tasks = [] } = useTasks()
   const { data: events = [] } = useEvents()
   const { data: courses = [] } = useCourses()
-  const todayStr = today()
-  const { data: focusSessions = [] } = useFocusSessions(todayStr)
+  const todayDate = todayStr()
+  const { data: focusSessions = [] } = useFocusSessions(todayDate)
   const { data: decomposedTaskIds } = useTasksWithSubtasks()
   const updateTask = useUpdateTask()
-  const { data: aiSummary, isLoading: summaryLoading, regenerateSummary } = useOverviewSummary()
-  const [regenerating, setRegenerating] = useState(false)
-  const summaryBusy = summaryLoading || regenerating
+  const { data: aiSummary, isFetching: summaryBusy, error: summaryError, regenerateSummary } = useOverviewSummary()
+  const { data: allSubtasksMap } = useAllSubtasks()
+  const { data: userSettings } = useUserSettings()
+  const schedule = useSchedule()
+
+  const todayCapacity = useMemo(() => {
+    const cap = userSettings?.daily_capacity_hours ?? 6
+    const allSubtasks = Array.from(allSubtasksMap?.values() ?? []).flat()
+    const scheduledToday = allSubtasks.filter((s) => {
+      if (!s.scheduled_start || s.status === 'complete') return false
+      return s.scheduled_start.slice(0, 10) === todayDate
+    })
+    const usedMinutes = scheduledToday.reduce((sum, s) => sum + s.estimated_minutes, 0)
+    return { used: Math.round(usedMinutes / 6) / 10, cap }
+  }, [allSubtasksMap, userSettings, todayDate])
 
   const courseMap = useMemo(
     () => Object.fromEntries(courses.map((c) => [c.id, c])),
@@ -80,9 +79,9 @@ export function OverviewTab({ onTaskClick, onDecompose, onNavigate }: Props) {
 
   const todayEvents = useMemo(() => {
     return events
-      .filter((e) => e.start_time.slice(0, 10) === todayStr)
+      .filter((e) => e.start_time.slice(0, 10) === todayDate)
       .sort((a, b) => a.start_time.localeCompare(b.start_time))
-  }, [events, todayStr])
+  }, [events, todayDate])
 
   function isEventPast(event: { start_time: string; end_time: string | null; all_day: boolean }) {
     if (event.all_day) return false
@@ -93,21 +92,21 @@ export function OverviewTab({ onTaskClick, onDecompose, onNavigate }: Props) {
 
   const todayTasks = useMemo(() => {
     return tasks
-      .filter((t) => t.due_date === todayStr)
+      .filter((t) => t.due_date === todayDate)
       .sort((a, b) => (a.status === 'done' ? 1 : 0) - (b.status === 'done' ? 1 : 0))
-  }, [tasks, todayStr])
+  }, [tasks, todayDate])
 
   const upcomingEvents = useMemo(() => {
     return events
-      .filter((e) => e.start_time.slice(0, 10) > todayStr)
+      .filter((e) => e.start_time.slice(0, 10) > todayDate)
       .sort((a, b) => a.start_time.localeCompare(b.start_time))
-  }, [events, todayStr])
+  }, [events, todayDate])
 
   const upcomingTasks = useMemo(() => {
     return tasks
-      .filter((t) => t.due_date > todayStr && t.status !== 'done')
+      .filter((t) => t.due_date > todayDate && t.status !== 'done')
       .sort((a, b) => a.due_date.localeCompare(b.due_date) || (a.status === 'done' ? 1 : 0) - (b.status === 'done' ? 1 : 0))
-  }, [tasks, todayStr])
+  }, [tasks, todayDate])
 
   const doneTasks = todayTasks.filter((t) => t.status === 'done')
   const progressPct =
@@ -128,14 +127,6 @@ export function OverviewTab({ onTaskClick, onDecompose, onNavigate }: Props) {
     })
   }
 
-  function formatTime(iso: string) {
-    return new Date(iso).toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    })
-  }
-
   return (
     <div className="max-w-7xl mx-auto space-y-6 py-4">
       {/* Clock + date */}
@@ -153,7 +144,7 @@ export function OverviewTab({ onTaskClick, onDecompose, onNavigate }: Props) {
           </div>
           <button
             type="button"
-            onClick={async () => { setRegenerating(true); try { await regenerateSummary() } finally { setRegenerating(false) } }}
+            onClick={() => regenerateSummary()}
             disabled={summaryBusy}
             className="p-1 text-muted-foreground hover:text-foreground transition-colors"
             title="Refresh summary"
@@ -167,6 +158,9 @@ export function OverviewTab({ onTaskClick, onDecompose, onNavigate }: Props) {
             <span className="text-sm">Generating your briefing...</span>
           </div>
         )}
+        {!summaryBusy && summaryError && !aiSummary && (
+          <p className="text-sm text-red-400">Failed to load briefing — check that the backend is running.</p>
+        )}
         {aiSummary && !summaryBusy && (
           <>
             <p className="text-sm">{aiSummary.summary}</p>
@@ -176,10 +170,10 @@ export function OverviewTab({ onTaskClick, onDecompose, onNavigate }: Props) {
       </div>
 
       {/* Stats row */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-4 gap-3">
         <div className="rounded-lg border bg-card p-4">
           <p className="text-xs text-muted-foreground mb-1">Tasks today</p>
-          <p className="text-2xl font-semibold">{doneTasks.length}/{todayTasks.length}</p>
+          <p className="text-2xl font-semibold">{todayTasks.length}</p>
         </div>
         <div className="rounded-lg border bg-card p-4">
           <p className="text-xs text-muted-foreground mb-1">Events today</p>
@@ -188,6 +182,21 @@ export function OverviewTab({ onTaskClick, onDecompose, onNavigate }: Props) {
         <div className="rounded-lg border bg-card p-4">
           <p className="text-xs text-muted-foreground mb-1">Focus minutes</p>
           <p className="text-2xl font-semibold">{totalFocusMinutes}</p>
+        </div>
+        <div className="rounded-lg border bg-card p-4">
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-xs text-muted-foreground">Capacity</p>
+            <button
+              type="button"
+              onClick={() => schedule.mutate({ force: true })}
+              disabled={schedule.isPending}
+              className="p-0.5 text-muted-foreground hover:text-foreground transition-colors"
+              title="Reschedule"
+            >
+              <CalendarSync className={`size-3 ${schedule.isPending ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
+          <p className="text-2xl font-semibold">{todayCapacity.used}<span className="text-sm font-normal text-muted-foreground">/{todayCapacity.cap}h</span></p>
         </div>
       </div>
 
@@ -292,6 +301,9 @@ export function OverviewTab({ onTaskClick, onDecompose, onNavigate }: Props) {
                     >
                       <button
                         type="button"
+                        role="checkbox"
+                        aria-checked={done}
+                        aria-label={`Mark "${task.title}" as ${done ? 'incomplete' : 'complete'}`}
                         onClick={() => toggleTask(task)}
                         className={`w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-colors ${
                           done
@@ -406,6 +418,9 @@ export function OverviewTab({ onTaskClick, onDecompose, onNavigate }: Props) {
                     >
                       <button
                         type="button"
+                        role="checkbox"
+                        aria-checked={done}
+                        aria-label={`Mark "${task.title}" as ${done ? 'incomplete' : 'complete'}`}
                         onClick={() => toggleTask(task)}
                         className={`w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-colors ${
                           done
