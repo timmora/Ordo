@@ -8,6 +8,7 @@ import { CourseSidebar } from '@/components/courses/CourseSidebar'
 import { EventModal } from '@/components/events/EventModal'
 import { TaskModal } from '@/components/tasks/TaskModal'
 import { DecompositionModal } from '@/components/tasks/DecompositionModal'
+import { SubtaskModal } from '@/components/tasks/SubtaskModal'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { ScheduleBanner } from '@/components/ScheduleBanner'
 import { SettingsModal } from '@/components/settings/SettingsModal'
@@ -35,7 +36,7 @@ import {
   Settings,
 } from 'lucide-react'
 import type { DecomposeContext } from '@/components/tasks/TaskModal'
-import type { Event, Task } from '@/types/database'
+import type { Event, Task, Subtask } from '@/types/database'
 
 const queryClient = new QueryClient()
 
@@ -64,6 +65,8 @@ function MainApp() {
   const [decomposeTask, setDecomposeTask] = useState<Task | undefined>()
   const [decomposeContext, setDecomposeContext] = useState<Omit<DecomposeContext, 'task'>>({})
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [subtaskModalOpen, setSubtaskModalOpen] = useState(false)
+  const [selectedSubtask, setSelectedSubtask] = useState<Subtask | null>(null)
 
   // Lazy keep-alive: track which tabs have been visited so they mount on first visit then stay alive
   const [visitedTabs, setVisitedTabs] = useState<Set<Tab>>(() => new Set([activeTab]))
@@ -71,6 +74,10 @@ function MainApp() {
     setActiveTab(tab)
     setVisitedTabs((prev) => prev.has(tab) ? prev : new Set(prev).add(tab))
   }, [])
+
+  function handleSidebarToggle() {
+    setSidebarOpen((o) => !o)
+  }
 
   // Keyboard shortcuts: Ctrl+E (new event), Ctrl+T (new task), 1-6 (switch tabs)
   useEffect(() => {
@@ -149,7 +156,7 @@ function MainApp() {
     <div className="flex h-screen bg-background">
       {/* Courses sidebar — full height, collapsible to icon rail */}
       <aside
-        className={`shrink-0 border-r overflow-x-hidden overflow-y-hidden transition-all duration-200 flex flex-col py-3 px-2 ${
+        className={`shrink-0 border-r overflow-x-hidden overflow-y-hidden transition-[width] duration-200 flex flex-col py-3 px-2 ${
           sidebarOpen ? 'w-56' : 'w-12'
         }`}
       >
@@ -158,9 +165,8 @@ function MainApp() {
           <span className={`absolute left-2 top-1/2 -translate-y-1/2 font-serif font-semibold text-lg tracking-tight whitespace-nowrap transition-opacity duration-200 ${sidebarOpen ? 'opacity-100' : 'opacity-0'}`}>Ordo</span>
           <button
             type="button"
-            onClick={() => setSidebarOpen((o) => !o)}
+            onClick={handleSidebarToggle}
             className="absolute right-0 top-0 flex items-center justify-center w-8 h-8 text-muted-foreground hover:text-foreground transition-colors"
-            title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
           >
             {sidebarOpen ? <PanelLeftClose className="size-4" /> : <PanelLeftOpen className="size-4" />}
           </button>
@@ -172,7 +178,6 @@ function MainApp() {
             type="button"
             onClick={openNewEvent}
             className="flex items-center gap-2 w-full h-8 px-2 rounded-md text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors overflow-hidden"
-            title="Add Event"
           >
             <CalendarPlus className="size-4 shrink-0" />
             <span className={`whitespace-nowrap transition-opacity duration-200 ${sidebarOpen ? 'opacity-100' : 'opacity-0 w-0 overflow-hidden'}`}>Add Event</span>
@@ -181,7 +186,6 @@ function MainApp() {
             type="button"
             onClick={openNewTask}
             className="flex items-center gap-2 w-full h-8 px-2 rounded-md text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors overflow-hidden"
-            title="Add Task"
           >
             <ListPlus className="size-4 shrink-0" />
             <span className={`whitespace-nowrap transition-opacity duration-200 ${sidebarOpen ? 'opacity-100' : 'opacity-0 w-0 overflow-hidden'}`}>Add Task</span>
@@ -199,7 +203,6 @@ function MainApp() {
             type="button"
             onClick={() => setSettingsOpen(true)}
             className="flex items-center gap-2 w-full h-8 px-2 rounded-md text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors overflow-hidden"
-            title="Settings"
           >
             <Settings className="size-4 shrink-0" />
             <span className={`whitespace-nowrap transition-opacity duration-200 ${sidebarOpen ? 'opacity-100' : 'opacity-0 w-0 overflow-hidden'}`}>Settings</span>
@@ -208,7 +211,6 @@ function MainApp() {
             type="button"
             onClick={handleSignOut}
             className="flex items-center gap-2 w-full h-8 px-2 rounded-md text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors overflow-hidden"
-            title="Sign out"
           >
             <LogOut className="size-4 shrink-0" />
             <span className={`whitespace-nowrap transition-opacity duration-200 ${sidebarOpen ? 'opacity-100' : 'opacity-0 w-0 overflow-hidden'}`}>Sign out</span>
@@ -217,24 +219,26 @@ function MainApp() {
       </aside>
 
       {/* Right column: header + tab content */}
-      <div className="flex flex-col flex-1 overflow-hidden">
+      <div className="@container flex flex-col flex-1 overflow-hidden">
         {/* Header */}
-        <header className="sticky top-0 z-50 flex items-center justify-center px-4 h-14 border-b bg-background/80 backdrop-blur-sm shrink-0">
+        <header className="sticky top-0 z-50 flex items-center justify-center px-2 h-14 border-b bg-background/80 backdrop-blur-sm shrink-0">
           {/* Tab navigation */}
-          <nav className="flex items-center gap-1">
+          <nav className="flex items-center gap-2 @2xl:gap-1">
             {TABS.map((tab) => (
               <button
                 key={tab.id}
                 type="button"
                 onClick={() => switchTab(tab.id)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                className={`flex items-center px-2.5 @2xl:px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                   activeTab === tab.id
                     ? 'bg-accent text-accent-foreground'
                     : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
                 }`}
               >
                 {tab.icon}
-                <span className="hidden sm:inline">{tab.label}</span>
+                <span className="overflow-hidden transition-all duration-200 whitespace-nowrap max-w-0 opacity-0 @2xl:max-w-24 @2xl:opacity-100 @2xl:ml-1.5">
+                  {tab.label}
+                </span>
               </button>
             ))}
           </nav>
@@ -244,36 +248,37 @@ function MainApp() {
 
         {/* Tab content — lazy keep-alive: mount on first visit, then stay alive via CSS hidden */}
         {visitedTabs.has('calendar') && (
-          <div className={`flex-1 overflow-auto px-3 pt-5 pb-3 ${activeTab === 'calendar' ? '' : 'hidden'}`}>
+          <div className={`flex-1 overflow-auto px-3 pt-5 pb-3 ${activeTab === 'calendar' ? 'animate-in fade-in-0 duration-200' : 'hidden'}`}>
             <CalendarTab
               onDateSelect={handleDateSelect}
               onEventClick={handleEventClick}
               onTaskClick={handleTaskClick}
+              onSubtaskClick={(subtask) => { setSelectedSubtask(subtask); setSubtaskModalOpen(true) }}
             />
           </div>
         )}
         {visitedTabs.has('overview') && (
-          <div className={`flex-1 overflow-auto px-6 py-4 ${activeTab === 'overview' ? '' : 'hidden'}`}>
-            <OverviewTab onTaskClick={handleTaskClick} onDecompose={handleDecompose} onNavigate={(tab) => switchTab(tab as Tab)} />
+          <div className={`flex-1 overflow-auto px-6 py-4 ${activeTab === 'overview' ? 'animate-in fade-in-0 duration-200' : 'hidden'}`}>
+            <OverviewTab onTaskClick={handleTaskClick} onDecompose={handleDecompose} onNavigate={(tab) => switchTab(tab as Tab)} onNewEvent={openNewEvent} onNewTask={openNewTask} />
           </div>
         )}
         {visitedTabs.has('events') && (
-          <div className={`flex-1 overflow-auto px-6 py-4 ${activeTab === 'events' ? '' : 'hidden'}`}>
+          <div className={`flex-1 overflow-auto px-6 py-4 ${activeTab === 'events' ? 'animate-in fade-in-0 duration-200' : 'hidden'}`}>
             <EventsTab onEventClick={handleEventClick} onNewEvent={openNewEvent} />
           </div>
         )}
         {visitedTabs.has('tasks') && (
-          <div className={`flex-1 overflow-auto px-6 py-4 ${activeTab === 'tasks' ? '' : 'hidden'}`}>
+          <div className={`flex-1 overflow-auto px-6 py-4 ${activeTab === 'tasks' ? 'animate-in fade-in-0 duration-200' : 'hidden'}`}>
             <TasksTab onTaskClick={handleTaskClick} onNewTask={openNewTask} onDecompose={handleDecompose} />
           </div>
         )}
         {visitedTabs.has('focus') && (
-          <div className={`flex-1 overflow-auto px-6 py-4 ${activeTab === 'focus' ? '' : 'hidden'}`}>
+          <div className={`flex-1 overflow-auto px-6 py-4 ${activeTab === 'focus' ? 'animate-in fade-in-0 duration-200' : 'hidden'}`}>
             <FocusTab />
           </div>
         )}
         {visitedTabs.has('journal') && (
-          <div className={`flex-1 overflow-auto px-6 py-4 ${activeTab === 'journal' ? '' : 'hidden'}`}>
+          <div className={`flex-1 overflow-auto px-6 py-4 ${activeTab === 'journal' ? 'animate-in fade-in-0 duration-200' : 'hidden'}`}>
             <JournalTab />
           </div>
         )}
@@ -301,6 +306,11 @@ function MainApp() {
         initialDescription={decomposeContext.description}
         initialFileContent={decomposeContext.fileContent}
         initialFileName={decomposeContext.fileName}
+      />
+      <SubtaskModal
+        open={subtaskModalOpen}
+        onClose={() => { setSubtaskModalOpen(false); setSelectedSubtask(null) }}
+        subtask={selectedSubtask}
       />
       <SettingsModal
         open={settingsOpen}

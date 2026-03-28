@@ -10,7 +10,8 @@ import { Calendar } from '@/components/ui/calendar'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { parse, format } from 'date-fns'
 import { toast } from 'sonner'
-import { JOURNAL_SECTIONS, MOOD_OPTIONS, ENERGY_OPTIONS, matchResponses } from '@/lib/journalPrompts'
+import { getDailyPrompts, MOOD_OPTIONS, ENERGY_OPTIONS, matchResponses } from '@/lib/journalPrompts'
+import type { JournalSection } from '@/lib/journalPrompts'
 import { MoodEnergySelector } from '@/components/journal/MoodEnergySelector'
 import { DayStatsBanner } from '@/components/journal/DayStatsBanner'
 import type { JournalPromptResponse } from '@/types/database'
@@ -31,12 +32,13 @@ function offsetDate(dateStr: string, days: number) {
 }
 
 function buildPayload(
+  sections: JournalSection[],
   current: Record<string, string>,
   orphaned: Array<{ prompt: string; response: string }>,
 ): JournalPromptResponse[] | null {
-  const hasContent = JOURNAL_SECTIONS.some((s) => (current[s.promptKey] ?? '').length > 0)
+  const hasContent = sections.some((s) => (current[s.promptKey] ?? '').length > 0)
   if (!hasContent) return null
-  const payload: JournalPromptResponse[] = JOURNAL_SECTIONS.map((s) => ({
+  const payload: JournalPromptResponse[] = sections.map((s) => ({
     prompt: s.prompt,
     promptKey: s.promptKey,
     response: current[s.promptKey] ?? '',
@@ -80,7 +82,7 @@ export function JournalTab() {
 
   // Direct Supabase save — bypasses React Query mutation to avoid dropped calls
   async function save(date: string, data: Record<string, string>, orph: Array<{ prompt: string; response: string }>) {
-    const payload = buildPayload(data, orph)
+    const payload = buildPayload(getDailyPrompts(date), data, orph)
     if (!payload) return
     setSaveStatus('saving')
     const { data: { user } } = await supabase.auth.getUser()
@@ -157,7 +159,8 @@ export function JournalTab() {
     }, 1000)
   }
 
-  const textSections = JOURNAL_SECTIONS.filter((s) => s.type === 'textarea')
+  const dailySections = getDailyPrompts(selectedDate)
+  const textSections = dailySections.filter((s) => s.type === 'textarea')
 
   return (
     <div className="max-w-2xl mx-auto py-4 space-y-6">
@@ -255,7 +258,7 @@ export function JournalTab() {
             <div key={section.promptKey} className="space-y-2">
               <p className="text-sm font-medium leading-snug">{section.prompt}</p>
               <textarea
-                className="w-full min-h-[120px] rounded-md border bg-card px-3 py-2 text-sm resize-y placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                className="w-full min-h-[120px] max-h-[400px] rounded-md border bg-card px-3 py-2 text-sm resize-y placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                 placeholder={section.placeholder}
                 value={responses[section.promptKey] ?? ''}
                 onChange={(e) => handleTextChange(section.promptKey, e.target.value)}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { BlockPicker } from 'react-color'
 import { Plus, Trash2, Clock8Icon } from 'lucide-react'
 import {
@@ -84,11 +84,11 @@ export function CourseModal({ open, onClose, course, onCourseCreated }: Props) {
       setError('')
       if (course) {
         await updateCourse.mutateAsync({ id: course.id, name: name.trim(), color, schedule })
-        toast.success('Course updated')
+        toast.success(`"${name.trim()}" updated`)
       } else {
         const created = await createCourse.mutateAsync({ name: name.trim(), color, schedule })
         onCourseCreated?.(created)
-        toast.success('Course created')
+        toast.success(`"${name.trim()}" created`)
       }
       onClose()
     } catch (err) {
@@ -101,7 +101,7 @@ export function CourseModal({ open, onClose, course, onCourseCreated }: Props) {
     try {
       setError('')
       await deleteCourse.mutateAsync(course.id)
-      toast.success('Course deleted')
+      toast.success(`"${course?.name}" deleted`)
       onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete course')
@@ -137,7 +137,7 @@ export function CourseModal({ open, onClose, course, onCourseCreated }: Props) {
                 <button
                   key={c}
                   type="button"
-                  className="size-7 rounded-full"
+                  className="size-6 rounded-full"
                   style={{
                     backgroundColor: c,
                     outline: color === c ? `2px solid ${c}` : 'none',
@@ -150,7 +150,7 @@ export function CourseModal({ open, onClose, course, onCourseCreated }: Props) {
                 <button
                   key={c}
                   type="button"
-                  className="size-7 rounded-full"
+                  className="size-6 rounded-full"
                   style={{
                     backgroundColor: c,
                     outline: color === c ? `2px solid ${c}` : 'none',
@@ -162,7 +162,7 @@ export function CourseModal({ open, onClose, course, onCourseCreated }: Props) {
               <div className="relative flex items-center">
                 <button
                   type="button"
-                  className="size-7 rounded-full border-2 border-dashed border-muted-foreground/40 hover:border-muted-foreground transition-colors"
+                  className="size-6 rounded-full border-2 border-dashed border-muted-foreground/40 hover:border-muted-foreground transition-colors"
                   title="Custom color"
                   onClick={() => setPickerOpen((o) => !o)}
                 />

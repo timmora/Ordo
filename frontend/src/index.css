@@ -232,3 +232,51 @@
     padding: 0.4rem 1rem !important;
   }
 }
+
+/* FullCalendar — theme-aware grid colors */
+.fc-custom {
+  --fc-border-color: var(--border);
+  --fc-today-bg-color: color-mix(in oklch, var(--accent) 60%, transparent);
+  --fc-neutral-bg-color: var(--card);
+  --fc-page-bg-color: var(--background);
+}
+/* Time slot labels */
+.fc-custom .fc-timegrid-slot-label-cushion,
+.fc-custom .fc-timegrid-axis-cushion {
+  color: var(--muted-foreground) !important;
+  font-size: 0.7rem !important;
+}
+/* Column day headers */
+.fc-custom .fc-col-header-cell-cushion {
+  color: var(--muted-foreground) !important;
+  font-weight: 500 !important;
+  text-decoration: none !important;
+}
+/* Day-grid date numbers */
+.fc-custom .fc-daygrid-day-number {
+  color: var(--muted-foreground) !important;
+  text-decoration: none !important;
+}
+/* Today's date — slightly brighter */
+.fc-custom .fc-day-today .fc-daygrid-day-number,
+.fc-custom .fc-day-today .fc-col-header-cell-cushion {
+  color: var(--foreground) !important;
+  font-weight: 600 !important;
+}
+
+/* Focus tab — subtask completion celebration */
+@keyframes celebrate-pop {
+  0%, 100% { transform: scale(1); }
+  35% { transform: scale(1.06); }
+  70% { transform: scale(0.97); }
+}
+@keyframes celebrate-sparkle {
+  0% { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(-28px) scale(0.5); }
+}
+
+/* Decomposition modal indeterminate progress bar */
+@keyframes shimmer {
+  0% { transform: translateX(-250%); }
+  100% { transform: translateX(500%); }
+}

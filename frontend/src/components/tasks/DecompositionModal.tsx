@@ -134,6 +134,8 @@ export function DecompositionModal({ open, onClose, task, initialDescription, in
   const [description, setDescription] = useState('')
   const [fileName, setFileName] = useState('')
   const [fileContent, setFileContent] = useState('')
+  const [fileData, setFileData] = useState('')       // base64, for PDFs
+  const [fileMediaType, setFileMediaType] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const decompose = useDecompose()
@@ -164,6 +166,8 @@ export function DecompositionModal({ open, onClose, task, initialDescription, in
       setDescription('')
       setFileName('')
       setFileContent('')
+      setFileData('')
+      setFileMediaType('')
       decompose.reset()
       autoGenerateRef.current = false
     }
@@ -181,16 +185,31 @@ export function DecompositionModal({ open, onClose, task, initialDescription, in
     const file = e.target.files?.[0]
     if (!file) return
     setFileName(file.name)
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
     const reader = new FileReader()
-    reader.onload = () => {
-      setFileContent(reader.result as string)
+    if (isPdf) {
+      reader.onload = () => {
+        const dataUrl = reader.result as string
+        setFileData(dataUrl.split(',')[1])   // strip "data:application/pdf;base64,"
+        setFileMediaType('application/pdf')
+        setFileContent('')
+      }
+      reader.readAsDataURL(file)
+    } else {
+      reader.onload = () => {
+        setFileContent(reader.result as string)
+        setFileData('')
+        setFileMediaType('')
+      }
+      reader.readAsText(file)
     }
-    reader.readAsText(file)
   }
 
   function removeFile() {
     setFileName('')
     setFileContent('')
+    setFileData('')
+    setFileMediaType('')
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
@@ -203,6 +222,8 @@ export function DecompositionModal({ open, onClose, task, initialDescription, in
         description: description.trim() || undefined,
         fileContent: fileContent || undefined,
         fileName: fileName || undefined,
+        fileData: fileData || undefined,
+        fileMediaType: fileMediaType || undefined,
       },
       {
         onSuccess: (suggestions) => {
@@ -326,7 +347,7 @@ export function DecompositionModal({ open, onClose, task, initialDescription, in
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".txt,.md,.csv,.json,.html,.py,.js,.ts,.tex,.rtf"
+                  accept=".pdf,.txt,.md,.csv,.json,.html,.py,.js,.ts,.tex,.rtf"
                   onChange={handleFileChange}
                   className="hidden"
                 />
@@ -358,9 +379,15 @@ export function DecompositionModal({ open, onClose, task, initialDescription, in
 
           {/* Loading state */}
           {isLoading && (
-            <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-              <Loader2 className="size-8 animate-spin mb-3" />
-              <p className="text-sm">Breaking down your task...</p>
+            <div className="flex flex-col items-center justify-center py-12 gap-4">
+              <Loader2 className="size-8 animate-spin text-muted-foreground" />
+              <div className="text-center space-y-1">
+                <p className="text-sm font-medium">Analyzing your task...</p>
+                <p className="text-xs text-muted-foreground">Breaking it into focused steps</p>
+              </div>
+              <div className="w-48 h-1 bg-muted rounded-full overflow-hidden">
+                <div className="h-full bg-primary rounded-full w-2/5" style={{ animation: 'shimmer 1.5s ease-in-out infinite' }} />
+              </div>
             </div>
           )}
 

@@ -20,7 +20,9 @@ Rules:
 - Each subtask should be 15–120 minutes of work.
 - Order subtasks logically (prerequisites first).
 - If the student provided an estimated total, your subtask minutes should roughly sum to that total.
-- Make subtasks specific to the task and course context, not generic."""
+- Make subtasks specific to the task and course context, not generic.
+- MINIMIZE the number of subtasks. If two steps can naturally be done in one sitting or are tightly coupled, combine them into a single subtask. Only split when the work requires fundamentally different resources, skills, or must happen at separate times.
+- Aim for 3–5 subtasks for most tasks. Only exceed 6 if the task is genuinely complex with distinct, separable phases."""
 
 
 class SubtaskSuggestion(BaseModel):
@@ -32,6 +34,8 @@ class DecomposeRequest(BaseModel):
     description: str | None = Field(default=None, max_length=10_000)
     file_content: str | None = Field(default=None, max_length=500_000)
     file_name: str | None = Field(default=None, max_length=255)
+    file_data: str | None = Field(default=None)          # base64-encoded binary (e.g. PDF)
+    file_media_type: str | None = Field(default=None, max_length=100)
 
 
 class DecomposeResponse(BaseModel):
@@ -121,16 +125,35 @@ async def decompose_task(
         if course_resp.data:
             course_name = course_resp.data[0]["name"]
 
-    # Build prompt
+    # Build prompt — omit file_content when a binary document block will carry it instead
+    using_document_block = bool(body.file_data and body.file_media_type)
     user_prompt = _build_user_prompt(
         title=task["title"],
         course_name=course_name,
         due_date=task["due_date"],
         estimated_hours=task.get("estimated_hours"),
         description=body.description,
-        file_content=body.file_content,
-        file_name=body.file_name,
+        file_content=None if using_document_block else body.file_content,
+        file_name=body.file_name if not using_document_block else None,
     )
+    if using_document_block and body.file_name:
+        user_prompt += f"\n\nThe attached document is: {body.file_name}"
+
+    # Build message content — use document block for binary files (PDFs), plain text otherwise
+    if body.file_data and body.file_media_type:
+        message_content: list = [
+            {
+                "type": "document",
+                "source": {
+                    "type": "base64",
+                    "media_type": body.file_media_type,
+                    "data": body.file_data,
+                },
+            },
+            {"type": "text", "text": user_prompt},
+        ]
+    else:
+        message_content = user_prompt
 
     # Call Anthropic Claude
     last_error = None
@@ -140,7 +163,7 @@ async def decompose_task(
                 model="claude-sonnet-4-20250514",
                 max_tokens=1024,
                 system=SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": user_prompt}],
+                messages=[{"role": "user", "content": message_content}],
             )
             response_text = extract_text(message)
             subtasks = _parse_subtasks(response_text)

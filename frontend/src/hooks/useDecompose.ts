@@ -7,16 +7,24 @@ interface DecomposeInput {
   description?: string
   fileContent?: string
   fileName?: string
+  fileData?: string       // base64, for PDFs
+  fileMediaType?: string
 }
 
 export function useDecompose() {
   return useMutation({
-    mutationFn: async ({ taskId, description, fileContent, fileName }: DecomposeInput): Promise<SubtaskSuggestion[]> => {
+    mutationFn: async ({ taskId, description, fileContent, fileName, fileData, fileMediaType }: DecomposeInput): Promise<SubtaskSuggestion[]> => {
       const data = await backendFetch<{ subtasks: SubtaskSuggestion[] }>(
         `/api/tasks/${taskId}/decompose`,
         {
           method: 'POST',
-          body: JSON.stringify({ description, file_content: fileContent, file_name: fileName }),
+          body: JSON.stringify({
+            description,
+            file_content: fileContent,
+            file_name: fileName,
+            file_data: fileData,
+            file_media_type: fileMediaType,
+          }),
         },
       )
       return data.subtasks

@@ -33,7 +33,13 @@ export function CourseSidebar() {
         </div>
 
         {courses.length === 0 && (
-          <p className="text-xs text-muted-foreground px-1">No courses yet.</p>
+          <button
+            type="button"
+            onClick={openCreate}
+            className="w-full text-left text-xs text-muted-foreground hover:text-foreground px-1 underline-offset-2 hover:underline transition-colors"
+          >
+            + Add your first course
+          </button>
         )}
 
         {courses.map((course) => (

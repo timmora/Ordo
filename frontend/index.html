@@ -11,6 +11,10 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // Apply theme before React hydrates to prevent flash
+      (function(){var t=localStorage.getItem('ordo_theme')||'system';var d=t==='system'?window.matchMedia('(prefers-color-scheme:dark)').matches:t==='dark';if(d)document.documentElement.classList.add('dark')})()
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

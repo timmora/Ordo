@@ -153,7 +153,7 @@ export function scheduledSubtasksToFC(
         backgroundColor: done ? color + '15' : color + '40',
         borderColor: done ? color + '60' : color,
         textColor: done ? color + '80' : color,
-        extendedProps: { type: 'subtask', dbSubtask: s, dbTask: task },
+        extendedProps: { type: 'subtask', dbSubtask: s, dbTask: task, parentTaskTitle: task?.title ?? '' },
       }
     })
 }

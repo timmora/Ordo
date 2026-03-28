@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { todayStr } from '@/lib/dateUtils'
 import { useTasks } from '@/hooks/useTasks'
-import { useSubtasks } from '@/hooks/useSubtasks'
+import { useSubtasks, useUpdateSubtask } from '@/hooks/useSubtasks'
 import { useFocusSessions, useFocusSessionsByTask, useCreateFocusSession, useFocusStreak } from '@/hooks/useFocusSessions'
 import { Button } from '@/components/ui/button'
 import {
@@ -33,13 +33,13 @@ const MODE_LABELS: Record<Mode, string> = {
 }
 
 const MODE_COLORS: Record<Mode, string> = {
-  focus: 'text-emerald-700',
-  break: 'text-amber-700',
+  focus: 'text-emerald-700 dark:text-emerald-400',
+  break: 'text-amber-700 dark:text-amber-400',
 }
 
 const MODE_BG: Record<Mode, string> = {
-  focus: 'bg-emerald-700',
-  break: 'bg-amber-700',
+  focus: 'bg-emerald-700 dark:bg-emerald-600',
+  break: 'bg-amber-700 dark:bg-amber-600',
 }
 
 const PREFS_KEY = 'ordo_focus_durations'
@@ -62,6 +62,7 @@ export function FocusTab() {
   const createSession = useCreateFocusSession()
   const { data: streak = 0 } = useFocusStreak()
 
+  const updateSubtask = useUpdateSubtask()
   const [durations, setDurations] = useState<Record<Mode, number>>(loadDurations)
   const [mode, setMode] = useState<Mode>('focus')
   const [secondsLeft, setSecondsLeft] = useState(durations[mode] * 60)
@@ -71,6 +72,8 @@ export function FocusTab() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [timerVisible, setTimerVisible] = useState(true)
   const [draftDurations, setDraftDurations] = useState<Record<Mode, number>>(durations)
+  const [celebrating, setCelebrating] = useState(false)
+  const [cardFading, setCardFading] = useState(false)
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const startTimeRef = useRef<number | null>(null)
@@ -129,7 +132,7 @@ export function FocusTab() {
             // Save full session
             logSession(durationsRef.current[modeRef.current] * 60)
             const label = modeRef.current === 'focus' ? 'Focus' : 'Break'
-            toast.success(`${label} session complete!`)
+            toast.success(`${label} session complete`)
             return 0
           }
           return s - 1
@@ -142,6 +145,19 @@ export function FocusTab() {
       if (intervalRef.current) clearInterval(intervalRef.current)
     }
   }, [running]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Spacebar to start/pause
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.code !== 'Space') return
+      const tag = (e.target as HTMLElement).tagName
+      if (['INPUT', 'TEXTAREA', 'BUTTON', 'SELECT'].includes(tag)) return
+      e.preventDefault()
+      setRunning((r) => !r)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   // Log partial session on unmount (e.g., navigating away from Focus tab)
   useEffect(() => {
@@ -217,8 +233,8 @@ export function FocusTab() {
             className={`px-6 py-2 rounded-full text-base font-medium transition-all duration-150 ${
               mode === m
                 ? m === 'focus'
-                  ? 'bg-emerald-700 text-white'
-                  : 'bg-amber-700 text-white'
+                  ? 'bg-emerald-700 dark:bg-emerald-600 text-white'
+                  : 'bg-amber-700 dark:bg-amber-600 text-white'
                 : 'bg-transparent text-muted-foreground hover:bg-muted'
             }`}
           >
@@ -309,14 +325,62 @@ export function FocusTab() {
         </Dialog>
       </div>
 
+      {/* Spacebar hint */}
+      <p className="text-center text-xs text-muted-foreground/50 -mt-4">
+        Press <kbd className="font-mono bg-muted px-1 py-0.5 rounded text-muted-foreground text-xs">Space</kbd> to {running ? 'pause' : 'start'}
+      </p>
+
       {/* Subtask progress — shown when a subtask is selected */}
       {selectedSubtask && (
-        <div className="rounded-lg border bg-card p-3 mx-4 text-left space-y-1.5">
-          <p className="text-sm font-medium">{selectedSubtask.title}</p>
+        <div
+          className={`relative rounded-lg border bg-card p-3 mx-4 text-left space-y-1.5 overflow-hidden transition-opacity duration-300 ${cardFading ? 'opacity-0' : 'opacity-100'}`}
+          style={celebrating ? { animation: 'celebrate-pop 0.5s ease-in-out', borderColor: 'rgb(74 222 128)' } : undefined}
+        >
+          {/* Sparkle particles */}
+          {celebrating && (
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center" aria-hidden>
+              {['✦', '✦', '✦', '✦', '✦'].map((s, i) => (
+                <span
+                  key={i}
+                  className="absolute text-green-400 text-xs font-bold"
+                  style={{
+                    animation: `celebrate-sparkle 0.8s ease-out ${i * 80}ms forwards`,
+                    left: `${20 + i * 15}%`,
+                    top: '40%',
+                  }}
+                >
+                  {s}
+                </span>
+              ))}
+            </div>
+          )}
+          <div className="flex items-start justify-between gap-2">
+            <p className="text-sm font-medium">{selectedSubtask.title}</p>
+            {selectedSubtask.status !== 'complete' && (
+              <button
+                type="button"
+                onClick={() => {
+                  updateSubtask.mutate({ id: selectedSubtask.id, status: 'complete' })
+                  setCelebrating(true)
+                  setTimeout(() => {
+                    setCelebrating(false)
+                    setCardFading(true)
+                    setTimeout(() => {
+                      setCardFading(false)
+                      setSelectedSubtaskId('none')
+                    }, 300)
+                  }, 1400)
+                }}
+                className="shrink-0 text-xs px-2 py-0.5 rounded-full border border-green-500/40 text-green-600 hover:bg-green-500/10 transition-colors"
+              >
+                Mark done
+              </button>
+            )}
+          </div>
           <div className="h-1.5 bg-muted rounded-full overflow-hidden">
             <div
               className={`h-full rounded-full transition-all ${
-                subtaskProgressPct >= 100 ? 'bg-green-500' : 'bg-amber-500'
+                subtaskProgressPct >= 100 ? 'bg-green-500 dark:bg-emerald-400' : 'bg-amber-500 dark:bg-amber-400'
               }`}
               style={{ width: `${subtaskProgressPct}%` }}
             />
@@ -334,6 +398,12 @@ export function FocusTab() {
 
       {/* Task selector */}
       <div className="space-y-2">
+        {pendingTasks.length === 0 && (
+          <div className="text-center py-3 space-y-0.5">
+            <p className="text-sm font-medium text-muted-foreground">All tasks complete</p>
+            <p className="text-xs text-muted-foreground/60">Nothing pending — enjoy the session</p>
+          </div>
+        )}
         <Label className="text-sm text-muted-foreground">Focusing on</Label>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

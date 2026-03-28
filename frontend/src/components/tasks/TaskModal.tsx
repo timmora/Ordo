@@ -1,13 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { BlockPicker } from 'react-color'
-import { format, parse } from 'date-fns'
+import { format, parse, isValid } from 'date-fns'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog'
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -19,10 +15,13 @@ import { ChevronDownIcon } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Calendar } from '@/components/ui/calendar'
 import { Sparkles, CalendarIcon, Clock8Icon, Paperclip, X } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useCourses, useCreateCourse } from '@/hooks/useCourses'
-import { useCreateTask, useUpdateTask, useDeleteTask } from '@/hooks/useTasks'
+import { useCreateTask, useUpdateTask } from '@/hooks/useTasks'
 import { useSubtasks } from '@/hooks/useSubtasks'
 import { SubtaskList } from '@/components/tasks/SubtaskList'
+import { supabase } from '@/lib/supabase'
+import { undoableDelete } from '@/lib/undoableDelete'
 import { toast } from 'sonner'
 import type { Task, TaskInsert } from '@/types/database'
 
@@ -47,10 +46,10 @@ interface Props {
 }
 
 export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: Props) {
+  const queryClient = useQueryClient()
   const { data: courses = [] } = useCourses()
   const createTask = useCreateTask()
   const updateTask = useUpdateTask()
-  const deleteTask = useDeleteTask()
   const createCourse = useCreateCourse()
   const { data: subtasks = [] } = useSubtasks(task?.id)
 
@@ -63,6 +62,8 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
   const [customColors, setCustomColors] = useState<string[]>([])
   const [dueDate, setDueDate] = useState('')
   const [dueTime, setDueTime] = useState('')
+  const [dueDateInput, setDueDateInput] = useState('')
+  const [dueDateOpen, setDueDateOpen] = useState(false)
   const [estimatedHours, setEstimatedHours] = useState('')
   const [priority, setPriority] = useState<Task['priority']>('medium')
   const [status, setStatus] = useState<Task['status']>('todo')
@@ -71,7 +72,6 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
   const [fileName, setFileName] = useState('')
   const [fileContent, setFileContent] = useState('')
   const [error, setError] = useState('')
-  const [confirmDelete, setConfirmDelete] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -102,8 +102,22 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
     setFileName('')
     setFileContent('')
     setError('')
-    setConfirmDelete(false)
   }, [task, open, defaultDueDate])
+
+  useEffect(() => {
+    setDueDateInput(dueDate ? format(parse(dueDate, 'yyyy-MM-dd', new Date()), 'MMM d, yyyy') : '')
+  }, [dueDate])
+
+  function tryParseDate(input: string): Date | null {
+    if (!input.trim()) return null
+    const ref = new Date()
+    const fmts = ['MMM d, yyyy', 'MMMM d, yyyy', 'M/d/yyyy', 'MM/dd/yyyy', 'M/d/yy', 'yyyy-MM-dd', 'MMM d']
+    for (const fmt of fmts) {
+      const d = parse(input.trim(), fmt, ref)
+      if (isValid(d)) return d
+    }
+    return null
+  }
 
   function buildPayload(): TaskInsert {
     return {
@@ -139,10 +153,10 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
       setError('')
       if (task) {
         await updateTask.mutateAsync({ id: task.id, ...buildPayload() })
-        toast.success('Task updated')
+        toast.success(`"${title.trim()}" updated`)
       } else {
         await createTask.mutateAsync(buildPayload())
-        toast.success('Task created')
+        toast.success(`"${title.trim()}" created`)
       }
       onClose()
     } catch (err) {
@@ -168,16 +182,20 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
     }
   }
 
-  async function handleDelete() {
+  function handleDelete() {
     if (!task) return
-    try {
-      setError('')
-      await deleteTask.mutateAsync(task.id)
-      toast.success('Task deleted')
-      onClose()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete task')
-    }
+    onClose()
+    undoableDelete({
+      queryClient,
+      queryKey: ['tasks'],
+      items: [task],
+      deleteFn: async () => {
+        const { error } = await supabase.from('tasks').delete().eq('id', task.id)
+        if (error) throw error
+        queryClient.invalidateQueries({ queryKey: ['subtasks'] })
+      },
+      message: `"${task.title}" deleted`,
+    })
   }
 
   const isPending = createTask.isPending || updateTask.isPending
@@ -326,24 +344,31 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Date</Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className={`w-full justify-start text-left font-normal ${!dueDate ? 'text-muted-foreground' : ''}`}
-                  >
-                    <CalendarIcon className="mr-2 size-4" />
-                    {dueDate ? format(parse(dueDate, 'yyyy-MM-dd', new Date()), 'PPP') : 'Date'}
-                  </Button>
-                </PopoverTrigger>
+              <Popover open={dueDateOpen} onOpenChange={setDueDateOpen}>
+                <div className="relative">
+                  <Input
+                    placeholder="mm/dd/yyyy"
+                    value={dueDateInput}
+                    onChange={(e) => setDueDateInput(e.target.value)}
+                    onBlur={() => {
+                      const d = tryParseDate(dueDateInput)
+                      if (d) setDueDate(format(d, 'yyyy-MM-dd'))
+                      else setDueDateInput(dueDate ? format(parse(dueDate, 'yyyy-MM-dd', new Date()), 'MMM d, yyyy') : '')
+                    }}
+                    className="pr-9"
+                  />
+                  <PopoverTrigger asChild>
+                    <button type="button" className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground hover:text-foreground transition-colors">
+                      <CalendarIcon className="size-4" />
+                    </button>
+                  </PopoverTrigger>
+                </div>
                 <PopoverContent className="w-auto p-0" align="start">
                   <Calendar
                     mode="single"
                     selected={dueDate ? parse(dueDate, 'yyyy-MM-dd', new Date()) : undefined}
                     onSelect={(date) => {
-                      if (date) {
-                        setDueDate(format(date, 'yyyy-MM-dd'))
-                      }
+                      if (date) { setDueDate(format(date, 'yyyy-MM-dd')); setDueDateOpen(false) }
                     }}
                     initialFocus
                   />
@@ -353,15 +378,15 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
             <div className="space-y-1.5">
               <Label>Time (optional)</Label>
               <div className="relative">
-                <div className="text-muted-foreground pointer-events-none absolute inset-y-0 left-0 flex items-center justify-center pl-3 peer-disabled:opacity-50">
-                  <Clock8Icon className="size-4" />
-                </div>
                 <Input
                   type="time"
                   value={dueTime}
                   onChange={(e) => setDueTime(e.target.value)}
-                  className="peer bg-background appearance-none pl-9 [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none"
+                  className="bg-background appearance-none pr-9 [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none"
                 />
+                <div className="text-muted-foreground pointer-events-none absolute inset-y-0 right-0 flex items-center justify-center pr-3">
+                  <Clock8Icon className="size-4" />
+                </div>
               </div>
             </div>
           </div>
@@ -490,7 +515,14 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
             </div>
           )}
 
-          {task && <SubtaskList taskId={task.id} />}
+          {task && (
+            <SubtaskList
+              taskId={task.id}
+              courseColor={courses.find((c) => c.id === task.course_id)?.color}
+              reorderable
+              limit={3}
+            />
+          )}
 
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
@@ -498,7 +530,7 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
         <DialogFooter className="flex justify-between">
           {task && (
             <div className="flex gap-2">
-              <Button variant="destructive" onClick={() => setConfirmDelete(true)} disabled={deleteTask.isPending}>
+              <Button variant="destructive" onClick={handleDelete}>
                 Delete
               </Button>
               {onDecompose && subtasks.length === 0 && (
@@ -532,22 +564,6 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
       </DialogContent>
     </Dialog>
 
-    <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Delete task?</AlertDialogTitle>
-          <AlertDialogDescription>
-            This will permanently delete &ldquo;{task?.title}&rdquo; and all its subtasks. This cannot be undone.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction variant="destructive" onClick={handleDelete}>
-            Delete
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
     </>
   )
 }

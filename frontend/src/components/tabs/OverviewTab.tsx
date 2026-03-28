@@ -9,7 +9,9 @@ import { Badge } from '@/components/ui/badge'
 import { useTasksWithSubtasks, useAllSubtasks } from '@/hooks/useSubtasks'
 import { useUserSettings } from '@/hooks/useUserSettings'
 import { useSchedule } from '@/hooks/useSchedule'
-import { Sparkles, Loader2, RefreshCw, CalendarSync } from 'lucide-react'
+import { Sparkles, RefreshCw, CalendarSync } from 'lucide-react'
+import { OverviewTabSkeleton } from '@/components/skeletons'
+import { Skeleton } from '@/components/ui/skeleton'
 import { formatDate, todayStr, formatTime, priorityVariant } from '@/lib/dateUtils'
 import type { DecomposeContext } from '@/components/tasks/TaskModal'
 import type { Task } from '@/types/database'
@@ -45,12 +47,14 @@ interface Props {
   onTaskClick: (task: Task) => void
   onDecompose?: (ctx: DecomposeContext) => void
   onNavigate?: (tab: string) => void
+  onNewEvent?: () => void
+  onNewTask?: () => void
 }
 
-export function OverviewTab({ onTaskClick, onDecompose, onNavigate }: Props) {
+export function OverviewTab({ onTaskClick, onDecompose, onNavigate, onNewEvent, onNewTask }: Props) {
   const [view, setView] = useState<OverviewView>('today')
-  const { data: tasks = [] } = useTasks()
-  const { data: events = [] } = useEvents()
+  const { data: tasks = [], isLoading: tasksLoading } = useTasks()
+  const { data: events = [], isLoading: eventsLoading } = useEvents()
   const { data: courses = [] } = useCourses()
   const todayDate = todayStr()
   const { data: focusSessions = [] } = useFocusSessions(todayDate)
@@ -127,6 +131,8 @@ export function OverviewTab({ onTaskClick, onDecompose, onNavigate }: Props) {
     })
   }
 
+  if (tasksLoading || eventsLoading) return <OverviewTabSkeleton />
+
   return (
     <div className="max-w-7xl mx-auto space-y-6 py-4">
       {/* Clock + date */}
@@ -153,13 +159,25 @@ export function OverviewTab({ onTaskClick, onDecompose, onNavigate }: Props) {
           </button>
         </div>
         {summaryBusy && (
-          <div className="flex items-center gap-2 py-2 text-muted-foreground">
-            <Loader2 className="size-4 animate-spin" />
-            <span className="text-sm">Generating your briefing...</span>
+          <div className="space-y-2 py-1">
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-5/6" />
+            <Skeleton className="h-4 w-3/5" />
+            <Skeleton className="h-3 w-1/2 mt-1" />
           </div>
         )}
         {!summaryBusy && summaryError && !aiSummary && (
-          <p className="text-sm text-red-400">Failed to load briefing — check that the backend is running.</p>
+          <div className="flex items-center justify-between py-1">
+            <p className="text-sm text-destructive">Could not load briefing.</p>
+            <button
+              type="button"
+              onClick={() => regenerateSummary()}
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <RefreshCw className="size-3" />
+              Retry
+            </button>
+          </div>
         )}
         {aiSummary && !summaryBusy && (
           <>
@@ -209,7 +227,7 @@ export function OverviewTab({ onTaskClick, onDecompose, onNavigate }: Props) {
           </div>
           <div className="h-2 bg-muted rounded-full overflow-hidden">
             <div
-              className="h-full bg-green-500 rounded-full transition-all"
+              className="h-full bg-green-500 dark:bg-emerald-400 rounded-full transition-all"
               style={{ width: `${progressPct}%` }}
             />
           </div>
@@ -243,7 +261,9 @@ export function OverviewTab({ onTaskClick, onDecompose, onNavigate }: Props) {
               {onNavigate && <button type="button" onClick={() => onNavigate('events')} className="text-xs text-muted-foreground hover:text-foreground transition-colors">Go to events</button>}
             </div>
             {todayEvents.length === 0 ? (
-              <p className="text-sm text-muted-foreground italic">No events today.</p>
+              <p className="text-sm text-muted-foreground italic">
+                No events today.{onNewEvent && <>{' '}<button type="button" onClick={onNewEvent} className="underline underline-offset-2 hover:text-foreground transition-colors">Add one</button></>}
+              </p>
             ) : (
               <div className="space-y-2">
                 {todayEvents.map((event) => {
@@ -252,7 +272,7 @@ export function OverviewTab({ onTaskClick, onDecompose, onNavigate }: Props) {
                   return (
                     <div
                       key={event.id}
-                      className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 ${
+                      className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 hover:bg-muted/40 transition-colors ${
                         past ? 'bg-muted/40 border-muted opacity-60' : 'bg-card'
                       }`}
                     >
@@ -288,7 +308,9 @@ export function OverviewTab({ onTaskClick, onDecompose, onNavigate }: Props) {
               {onNavigate && <button type="button" onClick={() => onNavigate('tasks')} className="text-xs text-muted-foreground hover:text-foreground transition-colors">Go to tasks</button>}
             </div>
             {todayTasks.length === 0 ? (
-              <p className="text-sm text-muted-foreground italic">No tasks due today.</p>
+              <p className="text-sm text-muted-foreground italic">
+                No tasks due today.{onNewTask && <>{' '}<button type="button" onClick={onNewTask} className="underline underline-offset-2 hover:text-foreground transition-colors">Add one</button></>}
+              </p>
             ) : (
               <div className="space-y-2">
                 {todayTasks.map((task) => {
@@ -297,7 +319,7 @@ export function OverviewTab({ onTaskClick, onDecompose, onNavigate }: Props) {
                   return (
                     <div
                       key={task.id}
-                      className="flex items-center gap-3 rounded-lg border bg-card px-3 py-2.5"
+                      className="flex items-center gap-3 rounded-lg border bg-card px-3 py-2.5 hover:bg-muted/40 transition-colors"
                     >
                       <button
                         type="button"
@@ -305,16 +327,18 @@ export function OverviewTab({ onTaskClick, onDecompose, onNavigate }: Props) {
                         aria-checked={done}
                         aria-label={`Mark "${task.title}" as ${done ? 'incomplete' : 'complete'}`}
                         onClick={() => toggleTask(task)}
-                        className={`w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-colors ${
+                        className={`w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-all duration-200 ${
                           done
-                            ? 'bg-green-500 border-green-500'
-                            : 'border-muted-foreground hover:border-green-500'
+                            ? 'bg-green-500 dark:bg-emerald-500 border-green-500 dark:border-emerald-500'
+                            : 'border-muted-foreground hover:border-green-500 dark:hover:border-emerald-400'
                         }`}
                       >
                         {done && (
-                          <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                          </svg>
+                          <span className="animate-in fade-in-0 zoom-in-75 duration-150 flex items-center justify-center">
+                            <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                          </span>
                         )}
                       </button>
                       <div className="flex-1 min-w-0">
@@ -365,7 +389,9 @@ export function OverviewTab({ onTaskClick, onDecompose, onNavigate }: Props) {
               {onNavigate && <button type="button" onClick={() => onNavigate('events')} className="text-xs text-muted-foreground hover:text-foreground transition-colors">Go to events</button>}
             </div>
             {upcomingEvents.length === 0 ? (
-              <p className="text-sm text-muted-foreground italic">No upcoming events.</p>
+              <p className="text-sm text-muted-foreground italic">
+                No upcoming events.{onNewEvent && <>{' '}<button type="button" onClick={onNewEvent} className="underline underline-offset-2 hover:text-foreground transition-colors">Add one</button></>}
+              </p>
             ) : (
               <div className="space-y-2">
                 {upcomingEvents.map((event) => {
@@ -373,7 +399,7 @@ export function OverviewTab({ onTaskClick, onDecompose, onNavigate }: Props) {
                   return (
                     <div
                       key={event.id}
-                      className="flex items-center gap-3 rounded-lg border bg-card px-3 py-2.5"
+                      className="flex items-center gap-3 rounded-lg border bg-card px-3 py-2.5 hover:bg-muted/40 transition-colors"
                     >
                       {course && (
                         <span
@@ -405,7 +431,9 @@ export function OverviewTab({ onTaskClick, onDecompose, onNavigate }: Props) {
               {onNavigate && <button type="button" onClick={() => onNavigate('tasks')} className="text-xs text-muted-foreground hover:text-foreground transition-colors">Go to tasks</button>}
             </div>
             {upcomingTasks.length === 0 ? (
-              <p className="text-sm text-muted-foreground italic">No upcoming tasks.</p>
+              <p className="text-sm text-muted-foreground italic">
+                No upcoming tasks.{onNewTask && <>{' '}<button type="button" onClick={onNewTask} className="underline underline-offset-2 hover:text-foreground transition-colors">Add one</button></>}
+              </p>
             ) : (
               <div className="space-y-2">
                 {upcomingTasks.map((task) => {
@@ -414,7 +442,7 @@ export function OverviewTab({ onTaskClick, onDecompose, onNavigate }: Props) {
                   return (
                     <div
                       key={task.id}
-                      className="flex items-center gap-3 rounded-lg border px-3 py-2.5"
+                      className="flex items-center gap-3 rounded-lg border bg-card px-3 py-2.5 hover:bg-muted/40 transition-colors"
                     >
                       <button
                         type="button"
@@ -422,20 +450,22 @@ export function OverviewTab({ onTaskClick, onDecompose, onNavigate }: Props) {
                         aria-checked={done}
                         aria-label={`Mark "${task.title}" as ${done ? 'incomplete' : 'complete'}`}
                         onClick={() => toggleTask(task)}
-                        className={`w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-colors ${
+                        className={`w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-all duration-200 ${
                           done
-                            ? 'bg-green-500 border-green-500'
-                            : 'border-muted-foreground hover:border-green-500'
+                            ? 'bg-green-500 dark:bg-emerald-500 border-green-500 dark:border-emerald-500'
+                            : 'border-muted-foreground hover:border-green-500 dark:hover:border-emerald-400'
                         }`}
                       >
                         {done && (
-                          <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                          </svg>
+                          <span className="animate-in fade-in-0 zoom-in-75 duration-150 flex items-center justify-center">
+                            <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                          </span>
                         )}
                       </button>
                       <div className="flex-1 min-w-0">
-                        <p className={`text-sm font-medium truncate ${done ? 'line-through text-muted-foreground' : ''}`}>{task.title}</p>
+                        <p className={`text-sm font-medium truncate transition-all duration-300 ${done ? 'line-through text-muted-foreground opacity-60' : ''}`}>{task.title}</p>
                         {course && (
                           <p className="text-xs text-muted-foreground">{course.name}</p>
                         )}

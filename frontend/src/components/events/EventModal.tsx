@@ -1,13 +1,9 @@
 import { useState, useEffect } from 'react'
 import { BlockPicker } from 'react-color'
-import { format, parse } from 'date-fns'
+import { format, parse, isValid } from 'date-fns'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog'
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -19,7 +15,10 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar'
 import { CalendarIcon, Clock8Icon } from 'lucide-react'
 import { useCourses, useCreateCourse } from '@/hooks/useCourses'
-import { useCreateEvent, useUpdateEvent, useDeleteEvent } from '@/hooks/useEvents'
+import { useQueryClient } from '@tanstack/react-query'
+import { useCreateEvent, useUpdateEvent } from '@/hooks/useEvents'
+import { supabase } from '@/lib/supabase'
+import { undoableDelete } from '@/lib/undoableDelete'
 import { toast } from 'sonner'
 import type { Event, EventInsert } from '@/types/database'
 
@@ -38,10 +37,10 @@ interface Props {
 }
 
 export function EventModal({ open, onClose, event, defaultStart, defaultEnd, defaultAllDay }: Props) {
+  const queryClient = useQueryClient()
   const { data: courses = [] } = useCourses()
   const createEvent = useCreateEvent()
   const updateEvent = useUpdateEvent()
-  const deleteEvent = useDeleteEvent()
   const createCourse = useCreateCourse()
 
   const [title, setTitle] = useState('')
@@ -59,7 +58,10 @@ export function EventModal({ open, onClose, event, defaultStart, defaultEnd, def
   const [location, setLocation] = useState('')
   const [recurrence, setRecurrence] = useState<string>('none')
   const [error, setError] = useState('')
-  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [startDateInput, setStartDateInput] = useState('')
+  const [endDateInput, setEndDateInput] = useState('')
+  const [startDateOpen, setStartDateOpen] = useState(false)
+  const [endDateOpen, setEndDateOpen] = useState(false)
 
   useEffect(() => {
     if (event) {
@@ -101,7 +103,6 @@ export function EventModal({ open, onClose, event, defaultStart, defaultEnd, def
       setCustomColors([])
     }
     setError('')
-    setConfirmDelete(false)
   }, [event, open, defaultStart, defaultEnd, defaultAllDay])
 
   function buildPayload(): EventInsert {
@@ -132,10 +133,10 @@ export function EventModal({ open, onClose, event, defaultStart, defaultEnd, def
       setError('')
       if (event) {
         await updateEvent.mutateAsync({ id: event.id, ...buildPayload() })
-        toast.success('Event updated')
+        toast.success(`"${title.trim()}" updated`)
       } else {
         await createEvent.mutateAsync(buildPayload())
-        toast.success('Event created')
+        toast.success(`"${title.trim()}" created`)
       }
       onClose()
     } catch (err) {
@@ -143,16 +144,38 @@ export function EventModal({ open, onClose, event, defaultStart, defaultEnd, def
     }
   }
 
-  async function handleDelete() {
+  function handleDelete() {
     if (!event) return
-    try {
-      setError('')
-      await deleteEvent.mutateAsync(event.id)
-      toast.success('Event deleted')
-      onClose()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete event')
+    onClose()
+    undoableDelete({
+      queryClient,
+      queryKey: ['events'],
+      items: [event],
+      deleteFn: async () => {
+        const { error } = await supabase.from('events').delete().eq('id', event.id)
+        if (error) throw error
+      },
+      message: `"${event.title}" deleted`,
+    })
+  }
+
+  // Sync display strings whenever the underlying date strings change
+  useEffect(() => {
+    setStartDateInput(startDate ? format(parse(startDate, 'yyyy-MM-dd', new Date()), 'MMM d, yyyy') : '')
+  }, [startDate])
+  useEffect(() => {
+    setEndDateInput(endDate ? format(parse(endDate, 'yyyy-MM-dd', new Date()), 'MMM d, yyyy') : '')
+  }, [endDate])
+
+  function tryParseDate(input: string): Date | null {
+    if (!input.trim()) return null
+    const ref = new Date()
+    const fmts = ['MMM d, yyyy', 'MMMM d, yyyy', 'M/d/yyyy', 'MM/dd/yyyy', 'M/d/yy', 'yyyy-MM-dd', 'MMM d']
+    for (const fmt of fmts) {
+      const d = parse(input.trim(), fmt, ref)
+      if (isValid(d)) return d
     }
+    return null
   }
 
   const startDateParsed = startDate ? parse(startDate, 'yyyy-MM-dd', new Date()) : undefined
@@ -340,22 +363,31 @@ export function EventModal({ open, onClose, event, defaultStart, defaultEnd, def
           {allDay ? (
             <div className="space-y-1.5">
               <Label>Date</Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className={`w-full justify-start text-left font-normal ${!startDate ? 'text-muted-foreground' : ''}`}
-                  >
-                    <CalendarIcon className="mr-2 size-4" />
-                    {startDate ? format(parse(startDate, 'yyyy-MM-dd', new Date()), 'PPP') : 'Date'}
-                  </Button>
-                </PopoverTrigger>
+              <Popover open={startDateOpen} onOpenChange={setStartDateOpen}>
+                <div className="relative">
+                  <Input
+                    placeholder="mm/dd/yyyy"
+                    value={startDateInput}
+                    onChange={(e) => setStartDateInput(e.target.value)}
+                    onBlur={() => {
+                      const d = tryParseDate(startDateInput)
+                      if (d) setStartDate(format(d, 'yyyy-MM-dd'))
+                      else setStartDateInput(startDate ? format(parse(startDate, 'yyyy-MM-dd', new Date()), 'MMM d, yyyy') : '')
+                    }}
+                    className="pr-9"
+                  />
+                  <PopoverTrigger asChild>
+                    <button type="button" className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground hover:text-foreground transition-colors">
+                      <CalendarIcon className="size-4" />
+                    </button>
+                  </PopoverTrigger>
+                </div>
                 <PopoverContent className="w-auto p-0" align="start">
                   <Calendar
                     mode="single"
                     selected={startDate ? parse(startDate, 'yyyy-MM-dd', new Date()) : undefined}
                     onSelect={(date) => {
-                      if (date) setStartDate(format(date, 'yyyy-MM-dd'))
+                      if (date) { setStartDate(format(date, 'yyyy-MM-dd')); setStartDateOpen(false) }
                     }}
                     initialFocus
                   />
@@ -366,57 +398,75 @@ export function EventModal({ open, onClose, event, defaultStart, defaultEnd, def
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Start</Label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className={`w-full justify-start text-left font-normal ${!startDate ? 'text-muted-foreground' : ''}`}
-                    >
-                      <CalendarIcon className="mr-2 size-4" />
-                      {startDate ? format(parse(startDate, 'yyyy-MM-dd', new Date()), 'MMM d, yyyy') : 'Date'}
-                    </Button>
-                  </PopoverTrigger>
+                <Popover open={startDateOpen} onOpenChange={setStartDateOpen}>
+                  <div className="relative">
+                    <Input
+                      placeholder="mm/dd/yyyy"
+                      value={startDateInput}
+                      onChange={(e) => setStartDateInput(e.target.value)}
+                      onBlur={() => {
+                        const d = tryParseDate(startDateInput)
+                        if (d) handleStartDateChange(d)
+                        else setStartDateInput(startDate ? format(parse(startDate, 'yyyy-MM-dd', new Date()), 'MMM d, yyyy') : '')
+                      }}
+                      className="pr-9"
+                    />
+                    <PopoverTrigger asChild>
+                      <button type="button" className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground hover:text-foreground transition-colors">
+                        <CalendarIcon className="size-4" />
+                      </button>
+                    </PopoverTrigger>
+                  </div>
                   <PopoverContent className="w-auto p-0" align="start">
                     <Calendar
                       mode="single"
                       selected={startDate ? parse(startDate, 'yyyy-MM-dd', new Date()) : undefined}
                       onSelect={(date) => {
-                        if (date) handleStartDateChange(date)
+                        if (date) { handleStartDateChange(date); setStartDateOpen(false) }
                       }}
                       initialFocus
                     />
                   </PopoverContent>
                 </Popover>
                 <div className="relative">
-                  <div className="text-muted-foreground pointer-events-none absolute inset-y-0 left-0 flex items-center justify-center pl-3 peer-disabled:opacity-50">
-                    <Clock8Icon className="size-4" />
-                  </div>
                   <Input
                     type="time"
                     value={startTime}
                     onChange={(e) => handleStartTimeChange(e.target.value)}
-                    className="peer bg-background appearance-none pl-9 [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none"
+                    className="bg-background appearance-none pr-9 [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none"
                   />
+                  <div className="text-muted-foreground pointer-events-none absolute inset-y-0 right-0 flex items-center justify-center pr-3">
+                    <Clock8Icon className="size-4" />
+                  </div>
                 </div>
               </div>
               <div className="space-y-1.5">
                 <Label>End</Label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className={`w-full justify-start text-left font-normal ${!endDate ? 'text-muted-foreground' : ''}`}
-                    >
-                      <CalendarIcon className="mr-2 size-4" />
-                      {endDate ? format(parse(endDate, 'yyyy-MM-dd', new Date()), 'MMM d, yyyy') : 'Date'}
-                    </Button>
-                  </PopoverTrigger>
+                <Popover open={endDateOpen} onOpenChange={setEndDateOpen}>
+                  <div className="relative">
+                    <Input
+                      placeholder="mm/dd/yyyy"
+                      value={endDateInput}
+                      onChange={(e) => setEndDateInput(e.target.value)}
+                      onBlur={() => {
+                        const d = tryParseDate(endDateInput)
+                        if (d) handleEndDateChange(d)
+                        else setEndDateInput(endDate ? format(parse(endDate, 'yyyy-MM-dd', new Date()), 'MMM d, yyyy') : '')
+                      }}
+                      className="pr-9"
+                    />
+                    <PopoverTrigger asChild>
+                      <button type="button" className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground hover:text-foreground transition-colors">
+                        <CalendarIcon className="size-4" />
+                      </button>
+                    </PopoverTrigger>
+                  </div>
                   <PopoverContent className="w-auto p-0" align="start">
                     <Calendar
                       mode="single"
                       selected={endDate ? parse(endDate, 'yyyy-MM-dd', new Date()) : undefined}
                       onSelect={(date) => {
-                        if (date) handleEndDateChange(date)
+                        if (date) { handleEndDateChange(date); setEndDateOpen(false) }
                       }}
                       disabled={startDateParsed ? { before: startDateParsed } : undefined}
                       initialFocus
@@ -424,16 +474,16 @@ export function EventModal({ open, onClose, event, defaultStart, defaultEnd, def
                   </PopoverContent>
                 </Popover>
                 <div className="relative">
-                  <div className="text-muted-foreground pointer-events-none absolute inset-y-0 left-0 flex items-center justify-center pl-3 peer-disabled:opacity-50">
-                    <Clock8Icon className="size-4" />
-                  </div>
                   <Input
                     type="time"
                     value={endTime}
                     onChange={(e) => handleEndTimeChange(e.target.value)}
                     onBlur={clampEndTime}
-                    className="peer bg-background appearance-none pl-9 [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none"
+                    className="bg-background appearance-none pr-9 [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none"
                   />
+                  <div className="text-muted-foreground pointer-events-none absolute inset-y-0 right-0 flex items-center justify-center pr-3">
+                    <Clock8Icon className="size-4" />
+                  </div>
                 </div>
               </div>
             </div>
@@ -473,7 +523,7 @@ export function EventModal({ open, onClose, event, defaultStart, defaultEnd, def
 
         <DialogFooter className="flex justify-between">
           {event && (
-            <Button variant="destructive" onClick={() => setConfirmDelete(true)} disabled={deleteEvent.isPending}>
+            <Button variant="destructive" onClick={handleDelete}>
               Delete
             </Button>
           )}
@@ -487,22 +537,6 @@ export function EventModal({ open, onClose, event, defaultStart, defaultEnd, def
       </DialogContent>
     </Dialog>
 
-    <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Delete event?</AlertDialogTitle>
-          <AlertDialogDescription>
-            This will permanently delete &ldquo;{event?.title}&rdquo;. This cannot be undone.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction variant="destructive" onClick={handleDelete}>
-            Delete
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
     </>
   )
 }

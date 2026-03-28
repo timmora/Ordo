@@ -1,13 +1,16 @@
 import { useMemo, useState } from 'react'
-import { useEvents, useBulkDeleteEvents } from '@/hooks/useEvents'
+import { useEvents } from '@/hooks/useEvents'
 import { useCourses } from '@/hooks/useCourses'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { ChevronDownIcon, CalendarPlus, Trash2, X } from 'lucide-react'
-import { formatDate, todayStr, formatTime } from '@/lib/dateUtils'
-import { toast } from 'sonner'
+import { relativeDueLabel, todayStr, formatTime } from '@/lib/dateUtils'
+import { useQueryClient } from '@tanstack/react-query'
+import { supabase } from '@/lib/supabase'
+import { undoableDelete } from '@/lib/undoableDelete'
+import { ListTabSkeleton } from '@/components/skeletons'
 import type { Event } from '@/types/database'
 
 type FilterTab = 'upcoming' | 'past' | 'all'
@@ -18,9 +21,9 @@ interface Props {
 }
 
 export function EventsTab({ onEventClick, onNewEvent }: Props) {
-  const { data: events = [] } = useEvents()
-  const { data: courses = [] } = useCourses()
-  const bulkDelete = useBulkDeleteEvents()
+  const queryClient = useQueryClient()
+  const { data: events = [], isLoading: eventsLoading } = useEvents()
+  const { data: courses = [], isLoading: coursesLoading } = useCourses()
 
   const [filterTab, setFilterTab] = useState<FilterTab>('upcoming')
   const [courseFilter, setCourseFilter] = useState<string>('all')
@@ -37,10 +40,19 @@ export function EventsTab({ onEventClick, onNewEvent }: Props) {
   const clearSelection = () => { setSelectedIds(new Set()); setSelectMode(false) }
 
   const bulkDeleteSelected = () => {
-    const count = selectedIds.size
-    bulkDelete.mutate([...selectedIds])
-    toast.success(`${count} event${count > 1 ? 's' : ''} deleted`)
+    const ids = [...selectedIds]
+    const items = events.filter((e) => selectedIds.has(e.id))
     clearSelection()
+    undoableDelete({
+      queryClient,
+      queryKey: ['events'],
+      items,
+      deleteFn: async () => {
+        const { error } = await supabase.from('events').delete().in('id', ids)
+        if (error) throw error
+      },
+      message: `${ids.length} event${ids.length > 1 ? 's' : ''} deleted`,
+    })
   }
 
   const courseMap = useMemo(
@@ -72,6 +84,8 @@ export function EventsTab({ onEventClick, onNewEvent }: Props) {
     { id: 'past', label: 'Past' },
     { id: 'all', label: 'All' },
   ]
+
+  if (eventsLoading || coursesLoading) return <ListTabSkeleton />
 
   return (
     <div className="space-y-4 py-2 max-w-7xl mx-auto">
@@ -149,8 +163,19 @@ export function EventsTab({ onEventClick, onNewEvent }: Props) {
 
       {/* Event list */}
       {filtered.length === 0 ? (
-        <div className="text-center py-16 text-muted-foreground text-sm">
-          No events match your filters.
+        <div className="text-center py-16 space-y-3">
+          {events.length === 0 ? (
+            <>
+              <CalendarPlus className="size-10 mx-auto text-muted-foreground/40" />
+              <p className="text-muted-foreground text-sm">No events yet. Create one to get started.</p>
+              <Button size="sm" onClick={onNewEvent}>
+                <CalendarPlus className="size-4 mr-1.5" />
+                New Event
+              </Button>
+            </>
+          ) : (
+            <p className="text-muted-foreground text-sm">No events match your filters.</p>
+          )}
         </div>
       ) : (
         <div className="space-y-2">
@@ -161,7 +186,7 @@ export function EventsTab({ onEventClick, onNewEvent }: Props) {
             return (
               <div
                 key={event.id}
-                className="flex items-center gap-3 rounded-lg border bg-card px-3 py-2.5 hover:bg-muted/40 transition-colors cursor-pointer"
+                className="flex items-center gap-3 rounded-lg border bg-card px-3 py-2.5 hover:bg-muted/40 transition-colors cursor-pointer animate-in fade-in-0 duration-200"
                 onClick={() => {
                   if (selectMode) toggleSelect(event.id)
                   else onEventClick(event)
@@ -174,8 +199,8 @@ export function EventsTab({ onEventClick, onNewEvent }: Props) {
                     onClick={(e) => { e.stopPropagation(); toggleSelect(event.id) }}
                     className={`w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-colors ${
                       selectedIds.has(event.id)
-                        ? 'bg-blue-500 border-blue-500'
-                        : 'border-muted-foreground/40 hover:border-blue-400'
+                        ? 'bg-blue-500 dark:bg-blue-400 border-blue-500 dark:border-blue-400'
+                        : 'border-muted-foreground/40 hover:border-blue-400 dark:hover:border-blue-300'
                     }`}
                   >
                     {selectedIds.has(event.id) && (
@@ -212,8 +237,8 @@ export function EventsTab({ onEventClick, onNewEvent }: Props) {
 
                 {/* Right side */}
                 <div className="flex items-center gap-2 shrink-0">
-                  <span className="text-xs font-mono text-muted-foreground">
-                    {formatDate(eventDate)}
+                  <span className="text-xs text-muted-foreground">
+                    {relativeDueLabel(eventDate)}
                   </span>
                   {!event.all_day && (
                     <span className="text-xs font-mono text-muted-foreground">
@@ -223,6 +248,14 @@ export function EventsTab({ onEventClick, onNewEvent }: Props) {
                   {event.all_day && (
                     <span className="text-xs text-muted-foreground">All day</span>
                   )}
+                  <span className="w-px h-4 bg-border" />
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); onEventClick(event) }}
+                    className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    Edit
+                  </button>
                 </div>
               </div>
             )
