@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .decompose import router as decompose_router
 from .summary import router as summary_router
 from .scheduler import router as scheduler_router
+from .syllabus import router as syllabus_router
 
 app = FastAPI(title="Ordo API", version="0.1.0")
 
@@ -22,6 +23,7 @@ app.add_middleware(
 app.include_router(decompose_router)
 app.include_router(summary_router)
 app.include_router(scheduler_router)
+app.include_router(syllabus_router)
 
 
 @app.get("/health")

@@ -22,6 +22,7 @@ export function useSchedule() {
     },
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['subtasks', '_all'] })
+      qc.invalidateQueries({ queryKey: ['tasks'] })
       if (data.changes.length > 0) {
         setPendingChanges(data.changes)
       }

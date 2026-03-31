@@ -188,6 +188,7 @@ def _try_place_in_range(
     work_end: time,
     tz,
     scheduled: list[dict],
+    due_deadline: datetime | None = None,
 ) -> bool:
     """Try to place a subtask in a free slot within [start_day, end_day]. Returns True if placed."""
     current_day = start_day
@@ -199,8 +200,13 @@ def _try_place_in_range(
 
         free_slots = compute_free_slots(current_day, all_busy, work_start, work_end, tz)
         for slot_start, slot_end in free_slots:
+            # Clip slot to due deadline if on the due date
+            if due_deadline and slot_end > due_deadline:
+                slot_end = due_deadline
             if (slot_end - slot_start).total_seconds() / 60 >= duration:
                 end_time = slot_start + needed
+                if due_deadline and end_time > due_deadline:
+                    continue
                 scheduled.append({
                     "id": subtask["id"],
                     "scheduled_start": slot_start.isoformat(),
@@ -276,21 +282,31 @@ def schedule_subtasks(
         needed = timedelta(minutes=duration)
 
         due_str = task.get("due_date", "")
+        due_time_str = task.get("due_time", "")
         end_day = today + timedelta(days=horizon_days)
+        due_deadline: datetime | None = None
         if due_str:
             due_date = date.fromisoformat(due_str)
             end_day = min(end_day, due_date)
+            if due_time_str:
+                due_t = parse_time(due_time_str)
+                due_deadline = datetime.combine(due_date, due_t, tzinfo=tz)
+            else:
+                # No specific time — allow scheduling up to end of work hours on due date
+                due_deadline = datetime.combine(due_date, work_end, tzinfo=tz)
 
         # Phase 1: try from ideal_day forward to end_day
         placed = _try_place_in_range(ideal_day, end_day, subtask, duration, needed,
                                       daily_used, daily_cap_minutes, all_busy,
-                                      work_start, work_end, tz, scheduled)
+                                      work_start, work_end, tz, scheduled,
+                                      due_deadline)
 
         # Phase 2: fallback — try from today to ideal_day if not placed
         if not placed:
             placed = _try_place_in_range(today, ideal_day - timedelta(days=1), subtask, duration, needed,
                                           daily_used, daily_cap_minutes, all_busy,
-                                          work_start, work_end, tz, scheduled)
+                                          work_start, work_end, tz, scheduled,
+                                          due_deadline)
 
         if not placed:
             unschedulable.append(subtask.get("title", "Unknown"))
@@ -336,9 +352,15 @@ async def run_schedule(
     today_date = date.today()
     settings = get_or_create_settings(sb, user_id)
 
-    # Fetch tasks (incomplete, with due dates in the future or today)
+    # Fetch tasks (incomplete, with due dates today or later)
     tasks_resp = sb.table("tasks").select("id, title, due_date, due_time, priority, status, course_id").eq("user_id", user_id).neq("status", "done").gte("due_date", str(today_date)).execute()
-    tasks = tasks_resp.data or []
+    # Also fetch overdue tasks (past due, not done) and bump their due_date to today
+    overdue_resp = sb.table("tasks").select("id, title, due_date, due_time, priority, status, course_id").eq("user_id", user_id).neq("status", "done").lt("due_date", str(today_date)).not_.is_("due_date", "null").execute()
+    overdue_tasks = overdue_resp.data or []
+    for t in overdue_tasks:
+        sb.table("tasks").update({"due_date": str(today_date)}).eq("id", t["id"]).execute()
+        t["due_date"] = str(today_date)
+    tasks = (tasks_resp.data or []) + overdue_tasks
     task_map = {t["id"]: t for t in tasks}
     task_ids = list(task_map.keys())
 

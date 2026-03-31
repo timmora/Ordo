@@ -1,11 +1,15 @@
 import { useState } from 'react'
-import { Plus } from 'lucide-react'
+import { Plus, Pencil } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useCourses } from '@/hooks/useCourses'
 import { CourseModal } from './CourseModal'
 import type { Course } from '@/types/database'
 
-export function CourseSidebar() {
+interface Props {
+  onCourseClick?: (courseId: string) => void
+}
+
+export function CourseSidebar({ onCourseClick }: Props) {
   const { data: courses = [] } = useCourses()
   const [modalOpen, setModalOpen] = useState(false)
   const [selected, setSelected] = useState<Course | undefined>()
@@ -43,17 +47,29 @@ export function CourseSidebar() {
         )}
 
         {courses.map((course) => (
-          <button
+          <div
             key={course.id}
-            className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-accent text-sm text-left transition-colors"
-            onClick={() => openEdit(course)}
+            className="group w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-accent text-sm text-left transition-colors"
           >
-            <span
-              className="size-2.5 rounded-full shrink-0"
-              style={{ backgroundColor: course.color }}
-            />
-            <span className="truncate">{course.name}</span>
-          </button>
+            <button
+              type="button"
+              className="flex-1 min-w-0 flex items-center gap-2"
+              onClick={() => onCourseClick?.(course.id)}
+            >
+              <span
+                className="size-2.5 rounded-full shrink-0"
+                style={{ backgroundColor: course.color }}
+              />
+              <span className="truncate">{course.name}</span>
+            </button>
+            <button
+              type="button"
+              className="shrink-0 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground transition-opacity"
+              onClick={() => openEdit(course)}
+            >
+              <Pencil className="size-3" />
+            </button>
+          </div>
         ))}
       </div>
 

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTasks, useUpdateTask, useBulkUpdateTasks } from '@/hooks/useTasks'
 import { useCourses } from '@/hooks/useCourses'
 import { Badge } from '@/components/ui/badge'
@@ -37,13 +37,14 @@ const restrictToVerticalWithinContainer: Modifier = ({ transform, draggingNodeRe
   }
 }
 
-type FilterTab = 'all' | 'overdue' | 'this_week' | 'later'
+type FilterTab = 'all' | 'overdue' | 'this_week' | 'later' | 'unscheduled'
 type PriorityFilter = 'all' | 'high' | 'medium' | 'low'
 
 interface Props {
   onTaskClick: (task: Task) => void
   onNewTask: () => void
   onDecompose?: (ctx: DecomposeContext) => void
+  activeCourseFilter?: { courseId: string; ts: number } | null
 }
 
 const weekStr = () => {
@@ -52,13 +53,14 @@ const weekStr = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-function SortableSubtaskRow({ sub, unlocked, onToggle, onEdit }: {
+function SortableSubtaskRow({ sub, unlocked, onToggle, onEdit, selectMode, isSelected, onSelect }: {
   sub: Subtask
-  index: number
-  allSubs: Subtask[]
   unlocked: boolean
   onToggle: () => void
   onEdit: () => void
+  selectMode: boolean
+  isSelected: boolean
+  onSelect: () => void
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: sub.id })
   const subDone = sub.status === 'complete'
@@ -67,36 +69,58 @@ function SortableSubtaskRow({ sub, unlocked, onToggle, onEdit }: {
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : undefined }}
-      className={`flex items-center gap-2.5 px-2 py-1.5 rounded-md transition-colors group ${unlocked ? 'hover:bg-muted/50 cursor-pointer' : 'opacity-50'}`}
-      onClick={() => { if (unlocked) onEdit() }}
+      className={`flex items-center gap-2.5 px-2 py-1.5 rounded-md transition-colors group ${selectMode ? 'hover:bg-muted/50 cursor-pointer' : unlocked ? 'hover:bg-muted/50 cursor-pointer' : 'opacity-50'}`}
+      onClick={() => { if (selectMode) onSelect(); else if (unlocked) onEdit() }}
     >
-      <button type="button" {...attributes} {...listeners} aria-label="Drag to reorder"
-        className="cursor-grab text-muted-foreground/20 group-hover:text-muted-foreground/60 hover:text-muted-foreground touch-none transition-colors"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <GripVertical className="size-3.5" />
-      </button>
-      <button
-        type="button"
-        role="checkbox"
-        aria-checked={subDone}
-        aria-label={`Mark subtask "${sub.title}" as ${subDone ? 'incomplete' : 'complete'}`}
-        disabled={!unlocked}
-        onClick={(e) => { e.stopPropagation(); onToggle() }}
-        className={`w-3.5 h-3.5 rounded border-2 shrink-0 flex items-center justify-center transition-all duration-200 ${
-          subDone
-            ? 'bg-green-500 dark:bg-emerald-500 border-green-500 dark:border-emerald-500'
-            : 'border-muted-foreground hover:border-green-500 dark:hover:border-emerald-400'
-        }`}
-      >
-        {subDone && (
-          <span className="animate-in fade-in-0 zoom-in-75 duration-150 flex items-center justify-center">
-            <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-            </svg>
-          </span>
-        )}
-      </button>
+      {selectMode ? (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onSelect() }}
+          className={`w-3.5 h-3.5 rounded border-2 shrink-0 flex items-center justify-center transition-all duration-200 ${
+            isSelected
+              ? 'bg-blue-500 dark:bg-blue-400 border-blue-500 dark:border-blue-400'
+              : 'border-muted-foreground/40 hover:border-blue-400 dark:hover:border-blue-300'
+          }`}
+        >
+          {isSelected && (
+            <span className="animate-in fade-in-0 zoom-in-75 duration-150 flex items-center justify-center">
+              <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            </span>
+          )}
+        </button>
+      ) : (
+        <button type="button" {...attributes} {...listeners} aria-label="Drag to reorder"
+          className="cursor-grab text-muted-foreground/20 group-hover:text-muted-foreground/60 hover:text-muted-foreground touch-none transition-colors"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <GripVertical className="size-3.5" />
+        </button>
+      )}
+      {!selectMode && (
+        <button
+          type="button"
+          role="checkbox"
+          aria-checked={subDone}
+          aria-label={`Mark subtask "${sub.title}" as ${subDone ? 'incomplete' : 'complete'}`}
+          disabled={!unlocked}
+          onClick={(e) => { e.stopPropagation(); onToggle() }}
+          className={`w-3.5 h-3.5 rounded border-2 shrink-0 flex items-center justify-center transition-all duration-200 ${
+            subDone
+              ? 'bg-green-500 dark:bg-emerald-500 border-green-500 dark:border-emerald-500'
+              : 'border-muted-foreground hover:border-green-500 dark:hover:border-emerald-400'
+          }`}
+        >
+          {subDone && (
+            <span className="animate-in fade-in-0 zoom-in-75 duration-150 flex items-center justify-center">
+              <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            </span>
+          )}
+        </button>
+      )}
       <span className={`text-xs flex-1 min-w-0 truncate ${subDone ? 'line-through text-muted-foreground' : ''}`}>
         {sub.title}
       </span>
@@ -107,7 +131,7 @@ function SortableSubtaskRow({ sub, unlocked, onToggle, onEdit }: {
   )
 }
 
-export function TasksTab({ onTaskClick, onNewTask, onDecompose }: Props) {
+export function TasksTab({ onTaskClick, onNewTask, onDecompose, activeCourseFilter }: Props) {
   const { data: tasks = [], isLoading: tasksLoading } = useTasks()
   const { data: courses = [], isLoading: coursesLoading } = useCourses()
   const { data: decomposedTaskIds } = useTasksWithSubtasks()
@@ -131,12 +155,6 @@ export function TasksTab({ onTaskClick, onNewTask, onDecompose }: Props) {
     const newIndex = subs.findIndex((s) => s.id === over.id)
     if (oldIndex === -1 || newIndex === -1) return
     const reordered = arrayMove(subs, oldIndex, newIndex)
-    // Optimistically update the cache
-    if (subtasksMap) {
-      const next = new Map(subtasksMap)
-      next.set(taskId, reordered)
-      // We don't setQueryData here directly — the mutation's onSettled will refetch
-    }
     reorderSubtasks.mutate(reordered.map((s, i) => ({ id: s.id, order_index: i })))
   }
 
@@ -145,24 +163,36 @@ export function TasksTab({ onTaskClick, onNewTask, onDecompose }: Props) {
   const [filterTab, setFilterTab] = useState<FilterTab>('all')
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('all')
   const [courseFilter, setCourseFilter] = useState<string>('all')
+
+  useEffect(() => {
+    if (activeCourseFilter) setCourseFilter(activeCourseFilter.courseId)
+  }, [activeCourseFilter])
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null)
   const [selectMode, setSelectMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [selectedSubtaskIds, setSelectedSubtaskIds] = useState<Set<string>>(new Set())
 
-  const toggleSelect = (id: string) =>
-    setSelectedIds((prev) => {
+  const toggleInSet = (setter: React.Dispatch<React.SetStateAction<Set<string>>>, id: string) =>
+    setter((prev) => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id); else next.add(id)
       return next
     })
 
-  const clearSelection = () => { setSelectedIds(new Set()); setSelectMode(false) }
+  const toggleSelect = (id: string) => toggleInSet(setSelectedIds, id)
+  const toggleSubtaskSelect = (id: string) => toggleInSet(setSelectedSubtaskIds, id)
+
+  const clearSelection = () => { setSelectedIds(new Set()); setSelectedSubtaskIds(new Set()); setSelectMode(false) }
+
+  const totalSelected = selectedIds.size + selectedSubtaskIds.size
 
   const bulkMarkDone = () => {
-    const count = selectedIds.size
-    bulkUpdate.mutate({ ids: [...selectedIds], patch: { status: 'done' } })
+    if (selectedIds.size > 0) bulkUpdate.mutate({ ids: [...selectedIds], patch: { status: 'done' } })
+    if (selectedSubtaskIds.size > 0) {
+      for (const id of selectedSubtaskIds) updateSubtask.mutate({ id, status: 'complete' })
+    }
+    toast.success(`${totalSelected} item${totalSelected > 1 ? 's' : ''} marked done`)
     clearSelection()
-    toast.success(`${count} task${count > 1 ? 's' : ''} marked done`)
   }
   const bulkSetPriority = (p: 'high' | 'medium' | 'low') => {
     const count = selectedIds.size
@@ -170,21 +200,30 @@ export function TasksTab({ onTaskClick, onNewTask, onDecompose }: Props) {
     clearSelection()
     toast.success(`${count} task${count > 1 ? 's' : ''} set to ${p} priority`)
   }
-  const bulkDeleteSelected = () => {
-    const ids = [...selectedIds]
-    const items = tasks.filter((t) => selectedIds.has(t.id))
+  const bulkDeleteSelected = async () => {
+    const taskIds = [...selectedIds]
+    const subIds = [...selectedSubtaskIds]
+    const taskItems = tasks.filter((t) => selectedIds.has(t.id))
     clearSelection()
-    undoableDelete({
-      queryClient,
-      queryKey: ['tasks'],
-      items,
-      deleteFn: async () => {
-        const { error } = await supabase.from('tasks').delete().in('id', ids)
-        if (error) throw error
-        queryClient.invalidateQueries({ queryKey: ['subtasks'] })
-      },
-      message: `${ids.length} task${ids.length > 1 ? 's' : ''} deleted`,
-    })
+    if (subIds.length > 0) {
+      const { error } = await supabase.from('subtasks').delete().in('id', subIds)
+      if (!error) queryClient.invalidateQueries({ queryKey: ['subtasks'] })
+    }
+    if (taskIds.length > 0) {
+      undoableDelete({
+        queryClient,
+        queryKey: ['tasks'],
+        items: taskItems,
+        deleteFn: async () => {
+          const { error } = await supabase.from('tasks').delete().in('id', taskIds)
+          if (error) throw error
+          queryClient.invalidateQueries({ queryKey: ['subtasks'] })
+        },
+        message: `${taskIds.length} task${taskIds.length > 1 ? 's' : ''} deleted`,
+      })
+    } else {
+      toast.success(`${subIds.length} subtask${subIds.length > 1 ? 's' : ''} deleted`)
+    }
   }
 
   const courseMap = useMemo(
@@ -198,9 +237,10 @@ export function TasksTab({ onTaskClick, onNewTask, onDecompose }: Props) {
 
     const result = tasks.filter((t) => {
       // Status tab filter
-      if (filterTab === 'overdue' && (t.due_date >= today || t.status === 'done')) return false
-      if (filterTab === 'this_week' && (t.due_date < today || t.due_date > week)) return false
-      if (filterTab === 'later' && t.due_date <= week) return false
+      if (filterTab === 'unscheduled') return !t.due_date
+      if (filterTab === 'overdue' && (!t.due_date || t.due_date >= today || t.status === 'done')) return false
+      if (filterTab === 'this_week' && (!t.due_date || t.due_date < today || t.due_date > week)) return false
+      if (filterTab === 'later' && (!t.due_date || t.due_date <= week)) return false
       // Priority filter
       if (priorityFilter !== 'all' && t.priority !== priorityFilter) return false
       // Course filter
@@ -229,6 +269,7 @@ export function TasksTab({ onTaskClick, onNewTask, onDecompose }: Props) {
     { id: 'this_week', label: 'This Week' },
     { id: 'later', label: 'Later' },
     { id: 'overdue', label: 'Overdue' },
+    { id: 'unscheduled', label: 'To-do' },
     { id: 'all', label: 'All' },
   ]
 
@@ -238,7 +279,7 @@ export function TasksTab({ onTaskClick, onNewTask, onDecompose }: Props) {
     <div className="space-y-4 py-2 max-w-7xl mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Tasks</h1>
+        <h1 className="font-bold" style={{ fontSize: '1.75em' }}>Tasks</h1>
         <div className="flex items-center gap-2">
           <Button
             size="sm"
@@ -314,24 +355,26 @@ export function TasksTab({ onTaskClick, onNewTask, onDecompose }: Props) {
       </div>
 
       {/* Bulk action bar — visible in select mode when items are selected */}
-      {selectMode && selectedIds.size > 0 && (
+      {selectMode && totalSelected > 0 && (
         <div className="flex items-center gap-2 rounded-lg border bg-card px-3 py-2 shadow-sm">
-          <span className="text-sm font-medium mr-1">{selectedIds.size} selected</span>
+          <span className="text-sm font-medium mr-1">{totalSelected} selected</span>
           <Button size="sm" variant="outline" onClick={bulkMarkDone}>
             <CheckCircle className="size-3.5 mr-1" /> Done
           </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button size="sm" variant="outline">Priority <ChevronDownIcon className="size-3.5 ml-1" /></Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              <DropdownMenuGroup>
-                <DropdownMenuItem onSelect={() => bulkSetPriority('high')}>High</DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => bulkSetPriority('medium')}>Medium</DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => bulkSetPriority('low')}>Low</DropdownMenuItem>
-              </DropdownMenuGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {selectedIds.size > 0 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="outline">Priority <ChevronDownIcon className="size-3.5 ml-1" /></Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuGroup>
+                  <DropdownMenuItem onSelect={() => bulkSetPriority('high')}>High</DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => bulkSetPriority('medium')}>Medium</DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => bulkSetPriority('low')}>Low</DropdownMenuItem>
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
           <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={bulkDeleteSelected}>
             <Trash2 className="size-3.5 mr-1" /> Delete
           </Button>
@@ -365,7 +408,7 @@ export function TasksTab({ onTaskClick, onNewTask, onDecompose }: Props) {
             const today = todayStr()
             const now = new Date()
             let overdue = false
-            if (!done) {
+            if (!done && task.due_date) {
               if (task.due_date < today) {
                 overdue = true
               } else if (task.due_date === today && task.due_time) {
@@ -464,7 +507,7 @@ export function TasksTab({ onTaskClick, onNewTask, onDecompose }: Props) {
                   {/* Right side */}
                   <div className="flex items-center gap-2 shrink-0">
                     <span className={`text-xs ${overdue ? 'text-destructive' : 'text-muted-foreground'}`}>
-                      {relativeDueLabel(task.due_date)}{task.due_time ? ` ${formatTime24to12(task.due_time)}` : ''}
+                      {task.due_date ? `${relativeDueLabel(task.due_date)}${task.due_time ? ` ${formatTime24to12(task.due_time)}` : ''}` : 'No due date'}
                     </span>
                     <Badge variant={priorityVariant(task.priority)} className="text-xs">
                       {task.priority}
@@ -507,9 +550,10 @@ export function TasksTab({ onTaskClick, onNewTask, onDecompose }: Props) {
                                 <SortableSubtaskRow
                                   key={sub.id}
                                   sub={sub}
-                                  index={i}
-                                  allSubs={taskSubtasks}
                                   unlocked={unlocked}
+                                  selectMode={selectMode}
+                                  isSelected={selectedSubtaskIds.has(sub.id)}
+                                  onSelect={() => toggleSubtaskSelect(sub.id)}
                                   onEdit={() => setSubtaskEditTarget(sub)}
                                   onToggle={() => {
                                     const newStatus = subDone ? 'pending' : 'complete'

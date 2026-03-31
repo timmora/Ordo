@@ -62,17 +62,23 @@ export function EventsTab({ onEventClick, onNewEvent }: Props) {
 
   const filtered = useMemo(() => {
     const now = new Date()
+    const today = todayStr()
 
     return events.filter((e) => {
       if (filterTab !== 'all') {
-        // Use end_time (or start_time) to determine if event has passed
-        const compareStr = e.end_time || e.start_time
-        const compareDate = new Date(compareStr)
-        const isPast = e.all_day
-          ? e.start_time.slice(0, 10) < todayStr()
-          : compareDate < now
-        if (filterTab === 'upcoming' && isPast) return false
-        if (filterTab === 'past' && !isPast) return false
+        // Recurring events are always "upcoming" (they have future occurrences)
+        if (e.recurrence_rule) {
+          if (filterTab === 'past') return false
+          // upcoming: always show recurring events
+        } else {
+          const compareStr = e.end_time || e.start_time
+          const compareDate = new Date(compareStr)
+          const isPast = e.all_day
+            ? e.start_time.slice(0, 10) < today
+            : compareDate < now
+          if (filterTab === 'upcoming' && isPast) return false
+          if (filterTab === 'past' && !isPast) return false
+        }
       }
       if (courseFilter !== 'all' && e.course_id !== courseFilter) return false
       return true
@@ -91,7 +97,7 @@ export function EventsTab({ onEventClick, onNewEvent }: Props) {
     <div className="space-y-4 py-2 max-w-7xl mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Events</h1>
+        <h1 className="font-bold" style={{ fontSize: '1.75em' }}>Events</h1>
         <div className="flex items-center gap-2">
           <Button
             size="sm"

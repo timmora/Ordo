@@ -4,43 +4,92 @@ import timeGridPlugin from '@fullcalendar/timegrid'
 import interactionPlugin from '@fullcalendar/interaction'
 import rrulePlugin from '@fullcalendar/rrule'
 import multiMonthPlugin from '@fullcalendar/multimonth'
-import type { DateSelectArg, EventClickArg, EventContentArg } from '@fullcalendar/core'
+import type { DateSelectArg, EventClickArg, EventContentArg, EventDropArg } from '@fullcalendar/core'
+import type { EventReceiveArg, EventResizeDoneArg } from '@fullcalendar/interaction'
 import { useCourses } from '@/hooks/useCourses'
-import { useEvents } from '@/hooks/useEvents'
+import { useEvents, useUpdateEvent } from '@/hooks/useEvents'
 import { useTasks, useUpdateTask } from '@/hooks/useTasks'
 import { useAllSubtasks, useUpdateSubtask } from '@/hooks/useSubtasks'
 import { dbEventsToFC, courseScheduleToFC, tasksToFC, scheduledSubtasksToFC } from '@/lib/calendarUtils'
 import { CalendarTabSkeleton } from '@/components/skeletons'
 import type { Event, Task, Subtask } from '@/types/database'
-import { useMemo } from 'react'
-import { Calendar } from 'lucide-react'
+import { useMemo, useRef, useEffect, useState } from 'react'
+import { CalendarDays, List, ChevronDown, ChevronLeft, ChevronRight, Plus } from 'lucide-react'
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { Badge } from '@/components/ui/badge'
+import { priorityVariant } from '@/lib/dateUtils'
+
+type ViewMode = 'calendar' | 'list'
+
+const VIEW_OPTIONS = [
+  { value: 'timeGridDay', label: 'Day' },
+  { value: 'timeGrid3Day', label: '3 Days' },
+  { value: 'timeGridWeek', label: 'Week' },
+  { value: 'dayGridMonth', label: 'Month' },
+  { value: 'multiMonthYear', label: 'Year' },
+]
 
 interface CalendarViewProps {
   onDateSelect: (arg: DateSelectArg) => void
   onEventClick: (event: Event) => void
   onTaskClick: (task: Task) => void
   onSubtaskClick: (subtask: Subtask) => void
+  onNewTodo: () => void
 }
 
-export function CalendarView({ onDateSelect, onEventClick, onTaskClick, onSubtaskClick }: CalendarViewProps) {
+export function CalendarView({ onDateSelect, onEventClick, onTaskClick, onSubtaskClick, onNewTodo }: CalendarViewProps) {
+  const calendarRef = useRef<FullCalendar>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [viewMode, setViewMode] = useState<ViewMode>('calendar')
+  const [calendarView, setCalendarView] = useState('timeGridWeek')
+  const [calendarTitle, setCalendarTitle] = useState('')
+
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const ro = new ResizeObserver(() => {
+      requestAnimationFrame(() => calendarRef.current?.getApi().updateSize())
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
   const { data: courses = [], isLoading: coursesLoading } = useCourses()
   const { data: events = [], isLoading: eventsLoading } = useEvents()
   const { data: tasks = [], isLoading: tasksLoading } = useTasks()
   const { data: allSubtasksMap } = useAllSubtasks()
   const updateTask = useUpdateTask()
   const updateSubtask = useUpdateSubtask()
+  const updateEvent = useUpdateEvent()
 
   const allSubtasks = useMemo(
     () => Array.from(allSubtasksMap?.values() ?? []).flat(),
     [allSubtasksMap],
   )
 
-  const fcEvents = [
+  const fcEvents = useMemo(() => [
     ...dbEventsToFC(events, courses),
     ...courseScheduleToFC(courses),
     ...tasksToFC(tasks, courses),
     ...scheduledSubtasksToFC(allSubtasks, tasks, courses),
-  ]
+  ], [events, courses, tasks, allSubtasks])
+
+  const courseMap = useMemo(
+    () => new Map(courses.map((c) => [c.id, c])),
+    [courses],
+  )
+
+  const unscheduledTasks = useMemo(
+    () => tasks.filter((t) => !t.due_date && t.status !== 'done'),
+    [tasks],
+  )
+
+  function changeView(view: string) {
+    setCalendarView(view)
+    calendarRef.current?.getApi().changeView(view)
+  }
 
   function handleEventClick(arg: EventClickArg) {
     const { type, dbEvent, dbTask, dbSubtask } = arg.event.extendedProps as {
@@ -49,9 +98,63 @@ export function CalendarView({ onDateSelect, onEventClick, onTaskClick, onSubtas
       dbTask?: Task
       dbSubtask?: Subtask
     }
+
+    // Centralise toggle here — FullCalendar's event-level hit-test determines which event was
+    // clicked, avoiding misfires when tiny checkbox buttons from adjacent events are close together.
+    const isCheckbox = !!(arg.jsEvent.target as HTMLElement).closest('[data-role="checkbox"]')
+    if (isCheckbox) {
+      if (type === 'task' && dbTask) {
+        updateTask.mutate({ id: dbTask.id, status: dbTask.status === 'done' ? 'todo' : 'done' })
+      } else if (type === 'subtask' && dbSubtask) {
+        updateSubtask.mutate({ id: dbSubtask.id, status: dbSubtask.status === 'complete' ? 'pending' : 'complete' })
+      }
+      return
+    }
+
     if (type === 'event' && dbEvent) onEventClick(dbEvent)
     if (type === 'task' && dbTask) onTaskClick(dbTask)
     if (type === 'subtask' && dbSubtask) onSubtaskClick(dbSubtask)
+  }
+
+  function handleEventDrop(arg: EventDropArg) {
+    const { type, dbTask, dbSubtask, dbEvent } = arg.event.extendedProps as {
+      type: string; dbTask?: Task; dbSubtask?: Subtask; dbEvent?: Event
+    }
+    if (type === 'task' && dbTask) {
+      const newDate = arg.event.startStr.slice(0, 10)
+      const newTime = arg.event.allDay ? null : arg.event.startStr.slice(11, 16)
+      updateTask.mutate({ id: dbTask.id, due_date: newDate, due_time: newTime || null })
+    }
+    if (type === 'subtask' && dbSubtask) {
+      updateSubtask.mutate({ id: dbSubtask.id, scheduled_start: arg.event.startStr, scheduled_end: arg.event.endStr ?? undefined })
+    }
+    if (type === 'event' && dbEvent) {
+      updateEvent.mutate({ id: dbEvent.id, start_time: arg.event.startStr, end_time: arg.event.endStr ?? null })
+    }
+    arg.revert()
+  }
+
+  function handleEventResize(arg: EventResizeDoneArg) {
+    const { type, dbSubtask, dbEvent } = arg.event.extendedProps as {
+      type: string; dbSubtask?: Subtask; dbEvent?: Event
+    }
+    if (type === 'subtask' && dbSubtask) {
+      updateSubtask.mutate({ id: dbSubtask.id, scheduled_end: arg.event.endStr ?? undefined })
+    }
+    if (type === 'event' && dbEvent) {
+      updateEvent.mutate({ id: dbEvent.id, end_time: arg.event.endStr ?? null })
+    }
+    arg.revert()
+  }
+
+  function handleEventReceive(arg: EventReceiveArg) {
+    const { dbTask } = arg.event.extendedProps as { dbTask?: Task }
+    if (dbTask) {
+      const newDate = arg.event.startStr.slice(0, 10)
+      const newTime = arg.event.allDay ? null : arg.event.startStr.slice(11, 16)
+      updateTask.mutate({ id: dbTask.id, due_date: newDate, due_time: newTime || null })
+    }
+    arg.revert()
   }
 
   function renderEventContent(arg: EventContentArg) {
@@ -67,15 +170,11 @@ export function CalendarView({ onDateSelect, onEventClick, onTaskClick, onSubtas
       const parentTitle = (arg.event.extendedProps as { parentTaskTitle?: string }).parentTaskTitle
       return (
         <div className="relative flex flex-col h-full overflow-hidden pl-3 pr-1 py-px">
-          {/* Inset colored bar — clipped by overflow:hidden so it never overflows the event block */}
           <div className="absolute left-0 top-0 bottom-0 w-[3px]" style={{ backgroundColor: borderCol }} />
           <div className="flex items-center gap-1 overflow-hidden min-h-0">
             <button
               type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                updateSubtask.mutate({ id: dbSubtask.id, status: subDone ? 'pending' : 'complete' })
-              }}
+              data-role="checkbox"
               className="w-3 h-3 rounded shrink-0 flex items-center justify-center"
               style={{
                 borderWidth: '1.5px',
@@ -110,10 +209,7 @@ export function CalendarView({ onDateSelect, onEventClick, onTaskClick, onSubtas
         <div className="flex items-center gap-1 px-1 overflow-hidden">
           <button
             type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              updateTask.mutate({ id: dbTask.id, status: done ? 'todo' : 'done' })
-            }}
+            data-role="checkbox"
             className="w-3 h-3 rounded shrink-0 flex items-center justify-center"
             style={{
               borderWidth: '1.5px',
@@ -137,64 +233,212 @@ export function CalendarView({ onDateSelect, onEventClick, onTaskClick, onSubtas
 
     return (
       <div className="fc-event-main-frame px-1 overflow-hidden">
-        {arg.timeText && <span className="fc-event-time">{arg.timeText} </span>}
+        {arg.timeText && (
+          <span className="fc-event-time">{arg.timeText.replace(/\s*[-–]\s*$/, '')} </span>
+        )}
         <span className="fc-event-title truncate">{arg.event.title}</span>
       </div>
     )
   }
 
+  const currentViewLabel = VIEW_OPTIONS.find((v) => v.value === calendarView)?.label ?? 'Week'
+
   if (coursesLoading || eventsLoading || tasksLoading) return <CalendarTabSkeleton />
 
-  const hasContent = fcEvents.length > 0
+  const viewToggle = (
+    <button
+      type="button"
+      className="fc-button fc-button-primary shrink-0"
+      style={{ borderRadius: '9999px', padding: '0.4em 0.75em', margin: 0, display: 'inline-flex', alignItems: 'center', gap: '0.55em' }}
+      onClick={() => setViewMode(viewMode === 'calendar' ? 'list' : 'calendar')}
+    >
+      <CalendarDays className={`size-4 ${viewMode !== 'calendar' ? 'opacity-40' : ''}`} />
+      <span className="w-px self-stretch bg-current opacity-30" />
+      <List className={`size-4 ${viewMode !== 'list' ? 'opacity-40' : ''}`} />
+    </button>
+  )
 
   return (
-    <div className="h-full flex flex-col relative [&_.fc]:flex-1 [&_.fc]:min-h-0 [&_.fc-view-harness]:flex-1 [&_.fc-view-harness]:rounded-lg [&_.fc-view-harness]:overflow-hidden [&_.fc-scrollgrid]:rounded-lg fc-custom">
-      {courses.length > 0 && (
-        <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 px-1 pb-2 text-xs text-muted-foreground">
-          {courses.map((c) => (
-            <span key={c.id} className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
-              {c.name}
-            </span>
-          ))}
+    <div ref={containerRef} className="h-full flex flex-col fc-custom">
+
+      {/* ── CUSTOM TOOLBAR — always in normal flow, never shifts position ── */}
+      <div className="grid grid-cols-[1fr_auto_1fr] items-center shrink-0 min-w-0" style={{ marginBottom: '1.5em' }}>
+
+        {/* Left */}
+        <div className="flex items-center gap-2">
+          {viewMode === 'calendar' ? (
+            <button
+              type="button"
+              className="fc-button fc-button-primary shrink-0"
+              onClick={() => calendarRef.current?.getApi().today()}
+            >
+              Today
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="fc-button fc-button-primary shrink-0 flex items-center gap-1"
+              onClick={onNewTodo}
+            >
+              Add
+              <Plus className="size-4" />
+            </button>
+          )}
+        </div>
+
+        {/* Center: arrows flanking the title (calendar), or plain title (list) */}
+        <div className="flex items-center justify-center gap-1">
+          {viewMode === 'calendar' && (
+            <button
+              type="button"
+              className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
+              onClick={() => calendarRef.current?.getApi().prev()}
+              aria-label="Previous"
+            >
+              <ChevronLeft className="size-5" />
+            </button>
+          )}
+          <h2 className="min-w-0 truncate font-bold" style={{ fontSize: '1.75em', margin: 0 }}>
+            {viewMode === 'calendar' ? calendarTitle : 'To-do'}
+          </h2>
+          {viewMode === 'calendar' && (
+            <button
+              type="button"
+              className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
+              onClick={() => calendarRef.current?.getApi().next()}
+              aria-label="Next"
+            >
+              <ChevronRight className="size-5" />
+            </button>
+          )}
+        </div>
+
+        {/* Right: dropdown (calendar only) + split toggle */}
+        <div className="flex items-center gap-2 justify-end">
+          {viewMode === 'calendar' && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button type="button" className="fc-button fc-button-primary shrink-0 flex items-center gap-1">
+                  {currentViewLabel}
+                  <ChevronDown className="size-3" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuGroup>
+                  {VIEW_OPTIONS.map((opt) => (
+                    <DropdownMenuItem
+                      key={opt.value}
+                      onSelect={() => changeView(opt.value)}
+                      className={calendarView === opt.value ? 'font-medium' : ''}
+                    >
+                      {opt.label}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+          {viewToggle}
+        </div>
+      </div>
+
+      {/* ── CALENDAR CONTENT ── */}
+      {viewMode === 'calendar' && (
+        <div className="flex-1 min-h-0 [&_.fc]:h-full [&_.fc-view-harness]:rounded-lg [&_.fc-view-harness]:overflow-hidden [&_.fc-scrollgrid]:rounded-lg">
+          <FullCalendar
+            ref={calendarRef}
+            plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin, rrulePlugin, multiMonthPlugin]}
+            initialView={calendarView}
+            views={{ timeGrid3Day: { type: 'timeGrid', duration: { days: 3 } } }}
+            headerToolbar={false}
+            datesSet={(info) => setCalendarTitle(info.view.title)}
+            height="100%"
+            selectable
+            selectMirror
+            editable
+            droppable
+            eventAllow={(_dropInfo, movingEvent) => {
+              const t = movingEvent?.extendedProps?.type
+              return t === 'task' || t === 'subtask' || t === 'event'
+            }}
+            dayMaxEvents={3}
+            nowIndicator
+            select={onDateSelect}
+            eventClick={handleEventClick}
+            eventDrop={handleEventDrop}
+            eventResize={handleEventResize}
+            eventReceive={handleEventReceive}
+            eventContent={renderEventContent}
+            events={fcEvents}
+            slotMinTime="00:00:00"
+            slotMaxTime="24:00:00"
+            allDaySlot
+            eventDisplay="block"
+            slotEventOverlap={false}
+            nextDayThreshold="00:00:00"
+            defaultTimedEventDuration="00:30:00"
+          />
         </div>
       )}
-      <FullCalendar
-        plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin, rrulePlugin, multiMonthPlugin]}
-        initialView="timeGridWeek"
-        headerToolbar={{
-          left: 'today',
-          center: 'prev title next',
-          right: 'multiMonthYear,dayGridMonth,timeGridWeek',
-        }}
-        buttonText={{
-          today: 'Today',
-          month: 'Month',
-          week: 'Week',
-          year: 'Year',
-        }}
-        height="100%"
-        selectable
-        selectMirror
-        dayMaxEvents={3}
-        nowIndicator
-        select={onDateSelect}
-        eventClick={handleEventClick}
-        eventContent={renderEventContent}
-        events={fcEvents}
-        slotMinTime="00:00:00"
-        slotMaxTime="24:00:00"
-        allDaySlot
-        eventDisplay="block"
-        slotEventOverlap={false}
-        nextDayThreshold="00:00:00"
-        defaultTimedEventDuration="00:30:00"
-      />
-      {!hasContent && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 pointer-events-none">
-          <Calendar className="size-10 text-muted-foreground/30" />
-          <p className="text-sm text-muted-foreground">No events yet</p>
-          <p className="text-xs text-muted-foreground/60">Click any time slot to create one</p>
+
+      {/* ── LIST CONTENT ── */}
+      {viewMode === 'list' && (
+        <div className="flex-1 min-h-0 flex justify-center overflow-y-auto py-4">
+          <div className="w-full max-w-2xl bg-card border rounded-xl shadow-sm p-4 space-y-1.5 h-fit">
+            {unscheduledTasks.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-12 italic">No unscheduled tasks.</p>
+            ) : (
+              unscheduledTasks.map((task) => {
+                const course = task.course_id ? courseMap.get(task.course_id) : null
+                const done = task.status === 'done'
+                return (
+                  <div
+                    key={task.id}
+                    className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 hover:bg-muted/50 transition-colors text-left"
+                  >
+                    <button
+                      type="button"
+                      role="checkbox"
+                      aria-checked={done}
+                      aria-label={`Mark "${task.title}" as ${done ? 'incomplete' : 'complete'}`}
+                      className={`w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-all duration-200 ${
+                        done
+                          ? 'bg-green-500 dark:bg-emerald-500 border-green-500 dark:border-emerald-500'
+                          : 'border-muted-foreground hover:border-green-500 dark:hover:border-emerald-400'
+                      }`}
+                      onClick={() => updateTask.mutate({ id: task.id, status: done ? 'todo' : 'done' })}
+                    >
+                      {done && (
+                        <span className="animate-in fade-in-0 zoom-in-75 duration-150 flex items-center justify-center">
+                          <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                          </svg>
+                        </span>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      className="flex-1 min-w-0 text-left"
+                      onClick={() => onTaskClick(task)}
+                    >
+                      <div className="flex items-center gap-3">
+                        {course && (
+                          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: course.color }} />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{task.title}</p>
+                          {course && <p className="text-xs text-muted-foreground">{course.name}</p>}
+                        </div>
+                      </div>
+                    </button>
+                    <Badge variant={priorityVariant(task.priority)} className="text-xs shrink-0">
+                      {task.priority}
+                    </Badge>
+                  </div>
+                )
+              })
+            )}
+          </div>
         </div>
       )}
     </div>

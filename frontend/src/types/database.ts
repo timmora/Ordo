@@ -76,7 +76,7 @@ export interface Database {
           user_id: string
           course_id: string | null
           title: string
-          due_date: string
+          due_date: string | null
           due_time: string | null
           estimated_hours: number | null
           priority: 'low' | 'medium' | 'high'
@@ -89,7 +89,7 @@ export interface Database {
           user_id?: string
           course_id?: string | null
           title: string
-          due_date: string
+          due_date?: string | null
           due_time?: string | null
           estimated_hours?: number | null
           priority?: 'low' | 'medium' | 'high'

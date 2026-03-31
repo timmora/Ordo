@@ -41,17 +41,17 @@ const QUOTES = [
 
 const quote = QUOTES[Math.floor(Math.random() * QUOTES.length)]
 
-type OverviewView = 'today' | 'upcoming'
+type OverviewView = 'today' | 'upcoming' | 'todo'
 
 interface Props {
   onTaskClick: (task: Task) => void
   onDecompose?: (ctx: DecomposeContext) => void
-  onNavigate?: (tab: string) => void
   onNewEvent?: () => void
   onNewTask?: () => void
+  onNewTodo?: () => void
 }
 
-export function OverviewTab({ onTaskClick, onDecompose, onNavigate, onNewEvent, onNewTask }: Props) {
+export function OverviewTab({ onTaskClick, onDecompose, onNewEvent, onNewTask, onNewTodo }: Props) {
   const [view, setView] = useState<OverviewView>('today')
   const { data: tasks = [], isLoading: tasksLoading } = useTasks()
   const { data: events = [], isLoading: eventsLoading } = useEvents()
@@ -234,9 +234,9 @@ export function OverviewTab({ onTaskClick, onDecompose, onNavigate, onNewEvent, 
         </div>
       )}
 
-      {/* Today / Upcoming toggle */}
+      {/* Today / Upcoming / To-do toggle */}
       <div className="flex gap-1 border-b">
-        {(['today', 'upcoming'] as OverviewView[]).map((v) => (
+        {(['today', 'upcoming', 'todo'] as OverviewView[]).map((v) => (
           <button
             key={v}
             type="button"
@@ -247,7 +247,7 @@ export function OverviewTab({ onTaskClick, onDecompose, onNavigate, onNewEvent, 
                 : 'border-transparent text-muted-foreground hover:text-foreground'
             }`}
           >
-            {v === 'today' ? 'Today' : 'Upcoming'}
+            {v === 'today' ? 'Today' : v === 'upcoming' ? 'Upcoming' : 'To-do'}
           </button>
         ))}
       </div>
@@ -258,7 +258,7 @@ export function OverviewTab({ onTaskClick, onDecompose, onNavigate, onNewEvent, 
           <div>
             <div className="flex items-center justify-between mb-2">
               <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Events</h2>
-              {onNavigate && <button type="button" onClick={() => onNavigate('events')} className="text-xs text-muted-foreground hover:text-foreground transition-colors">Go to events</button>}
+              {onNewEvent && <button type="button" onClick={onNewEvent} className="text-xs text-muted-foreground hover:text-foreground transition-colors">+ Add</button>}
             </div>
             {todayEvents.length === 0 ? (
               <p className="text-sm text-muted-foreground italic">
@@ -305,7 +305,7 @@ export function OverviewTab({ onTaskClick, onDecompose, onNavigate, onNewEvent, 
           <div>
             <div className="flex items-center justify-between mb-2">
               <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Tasks</h2>
-              {onNavigate && <button type="button" onClick={() => onNavigate('tasks')} className="text-xs text-muted-foreground hover:text-foreground transition-colors">Go to tasks</button>}
+              {onNewTask && <button type="button" onClick={onNewTask} className="text-xs text-muted-foreground hover:text-foreground transition-colors">+ Add</button>}
             </div>
             {todayTasks.length === 0 ? (
               <p className="text-sm text-muted-foreground italic">
@@ -386,7 +386,7 @@ export function OverviewTab({ onTaskClick, onDecompose, onNavigate, onNewEvent, 
           <div>
             <div className="flex items-center justify-between mb-2">
               <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Events</h2>
-              {onNavigate && <button type="button" onClick={() => onNavigate('events')} className="text-xs text-muted-foreground hover:text-foreground transition-colors">Go to events</button>}
+              {onNewEvent && <button type="button" onClick={onNewEvent} className="text-xs text-muted-foreground hover:text-foreground transition-colors">+ Add</button>}
             </div>
             {upcomingEvents.length === 0 ? (
               <p className="text-sm text-muted-foreground italic">
@@ -428,7 +428,7 @@ export function OverviewTab({ onTaskClick, onDecompose, onNavigate, onNewEvent, 
           <div>
             <div className="flex items-center justify-between mb-2">
               <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Tasks</h2>
-              {onNavigate && <button type="button" onClick={() => onNavigate('tasks')} className="text-xs text-muted-foreground hover:text-foreground transition-colors">Go to tasks</button>}
+              {onNewTask && <button type="button" onClick={onNewTask} className="text-xs text-muted-foreground hover:text-foreground transition-colors">+ Add</button>}
             </div>
             {upcomingTasks.length === 0 ? (
               <p className="text-sm text-muted-foreground italic">
@@ -503,6 +503,80 @@ export function OverviewTab({ onTaskClick, onDecompose, onNavigate, onNewEvent, 
           </div>
         </>
       )}
+
+      {view === 'todo' && (() => {
+        const unscheduled = tasks.filter((t) => !t.due_date && t.status !== 'done')
+        return (
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                To-do
+              </h2>
+              {onNewTodo && (
+                <button type="button" onClick={onNewTodo} className="text-xs text-muted-foreground hover:text-foreground transition-colors">
+                  + Add
+                </button>
+              )}
+            </div>
+            {unscheduled.length === 0 ? (
+              <p className="text-sm text-muted-foreground italic">
+                No unscheduled tasks.{onNewTodo && <>{' '}<button type="button" onClick={onNewTodo} className="underline underline-offset-2 hover:text-foreground transition-colors">Add one</button></>}
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {unscheduled.map((task) => {
+                  const course = task.course_id ? courseMap[task.course_id] : null
+                  const done = task.status === 'done'
+                  return (
+                    <div
+                      key={task.id}
+                      className="flex items-center gap-3 rounded-lg border bg-card px-3 py-2.5 hover:bg-muted/40 transition-colors"
+                    >
+                      <button
+                        type="button"
+                        role="checkbox"
+                        aria-checked={done}
+                        onClick={() => toggleTask(task)}
+                        className={`w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-all duration-200 ${
+                          done
+                            ? 'bg-green-500 dark:bg-emerald-500 border-green-500 dark:border-emerald-500'
+                            : 'border-muted-foreground hover:border-green-500 dark:hover:border-emerald-400'
+                        }`}
+                      >
+                        {done && (
+                          <span className="animate-in fade-in-0 zoom-in-75 duration-150 flex items-center justify-center">
+                            <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                          </span>
+                        )}
+                      </button>
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-sm font-medium truncate ${done ? 'line-through text-muted-foreground' : ''}`}>
+                          {task.title}
+                        </p>
+                        {course && <p className="text-xs text-muted-foreground">{course.name}</p>}
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <Badge variant={priorityVariant(task.priority)} className="text-xs">
+                          {task.priority}
+                        </Badge>
+                        <button
+                          type="button"
+                          onClick={() => onTaskClick(task)}
+                          className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          Edit
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )
+      })()}
     </div>
   )
 }

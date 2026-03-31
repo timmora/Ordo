@@ -7,16 +7,18 @@ interface Props {
   onEventClick: (event: Event) => void
   onTaskClick: (task: Task) => void
   onSubtaskClick: (subtask: Subtask) => void
+  onNewTodo: () => void
 }
 
-export function CalendarTab({ onDateSelect, onEventClick, onTaskClick, onSubtaskClick }: Props) {
+export function CalendarTab({ onDateSelect, onEventClick, onTaskClick, onSubtaskClick, onNewTodo }: Props) {
   return (
-    <div className="h-full max-w-7xl mx-auto">
+    <div className="h-full">
       <CalendarView
         onDateSelect={onDateSelect}
         onEventClick={onEventClick}
         onTaskClick={onTaskClick}
         onSubtaskClick={onSubtaskClick}
+        onNewTodo={onNewTodo}
       />
     </div>
   )

@@ -4,7 +4,6 @@ import { supabase } from '@/lib/supabase'
 import { useJournalEntry } from '@/hooks/useJournalEntries'
 import { useTasks } from '@/hooks/useTasks'
 import { useFocusSessions, useFocusStreak } from '@/hooks/useFocusSessions'
-import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Calendar } from '@/components/ui/calendar'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
@@ -166,18 +165,19 @@ export function JournalTab() {
     <div className="max-w-2xl mx-auto py-4 space-y-6">
       {/* Date nav */}
       <div className="flex items-center justify-between">
-        <Button
-          variant="ghost"
-          size="sm"
+        <button
+          type="button"
+          className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
           onClick={() => setSelectedDate(offsetDate(selectedDate, -1))}
+          aria-label="Previous day"
         >
-          <ChevronLeft className="size-4" />
-        </Button>
+          <ChevronLeft className="size-5" />
+        </button>
         <div className="text-center relative">
           <Popover>
             <PopoverTrigger asChild>
               <button type="button" className="hover:text-muted-foreground transition-colors cursor-pointer">
-                <h1 className="text-2xl font-bold">{formatDisplayDate(selectedDate)}</h1>
+                <h1 className="font-bold" style={{ fontSize: '1.75em' }}>{formatDisplayDate(selectedDate)}</h1>
               </button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0" align="center">
@@ -202,14 +202,14 @@ export function JournalTab() {
             </button>
           )}
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setSelectedDate(offsetDate(selectedDate, 1))}
-          disabled={isToday}
+        <button
+          type="button"
+          className={`shrink-0 p-1 transition-colors ${isToday ? 'opacity-30 cursor-not-allowed' : 'text-muted-foreground hover:text-foreground'}`}
+          onClick={() => !isToday && setSelectedDate(offsetDate(selectedDate, 1))}
+          aria-label="Next day"
         >
-          <ChevronRight className="size-4" />
-        </Button>
+          <ChevronRight className="size-5" />
+        </button>
       </div>
 
       {/* Save status */}

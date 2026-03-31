@@ -9,6 +9,8 @@ import { EventModal } from '@/components/events/EventModal'
 import { TaskModal } from '@/components/tasks/TaskModal'
 import { DecompositionModal } from '@/components/tasks/DecompositionModal'
 import { SubtaskModal } from '@/components/tasks/SubtaskModal'
+import { TodoModal } from '@/components/tasks/TodoModal'
+import { CreateTypeModal } from '@/components/calendar/CreateTypeModal'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { ScheduleBanner } from '@/components/ScheduleBanner'
 import { SettingsModal } from '@/components/settings/SettingsModal'
@@ -67,6 +69,11 @@ function MainApp() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [subtaskModalOpen, setSubtaskModalOpen] = useState(false)
   const [selectedSubtask, setSelectedSubtask] = useState<Subtask | null>(null)
+  const [todoModalOpen, setTodoModalOpen] = useState(false)
+  const [activeCourseFilter, setActiveCourseFilter] = useState<{ courseId: string; ts: number } | null>(null)
+  const [createTypeModalOpen, setCreateTypeModalOpen] = useState(false)
+  const [pendingDateSelect, setPendingDateSelect] = useState<DateSelectArg | null>(null)
+  const [taskDefaultDueDate, setTaskDefaultDueDate] = useState<string | undefined>()
 
   // Lazy keep-alive: track which tabs have been visited so they mount on first visit then stay alive
   const [visitedTabs, setVisitedTabs] = useState<Set<Tab>>(() => new Set([activeTab]))
@@ -104,11 +111,12 @@ function MainApp() {
   }, [])
 
   function handleDateSelect(arg: DateSelectArg) {
-    setSelectedEvent(undefined)
-    setDefaultStart(arg.start)
-    setDefaultEnd(arg.end)
-    setDefaultAllDay(arg.allDay)
-    setEventModalOpen(true)
+    setPendingDateSelect(arg)
+    setCreateTypeModalOpen(true)
+  }
+
+  function openNewTodo() {
+    setTodoModalOpen(true)
   }
 
   function handleEventClick(event: Event) {
@@ -121,6 +129,7 @@ function MainApp() {
 
   function handleTaskClick(task: Task) {
     setSelectedTask(task)
+    setTaskDefaultDueDate(undefined)
     setTaskModalOpen(true)
   }
 
@@ -134,6 +143,7 @@ function MainApp() {
 
   function openNewTask() {
     setSelectedTask(undefined)
+    setTaskDefaultDueDate(undefined)
     setTaskModalOpen(true)
   }
 
@@ -194,7 +204,7 @@ function MainApp() {
 
         {/* Courses */}
         <div className={`flex-1 min-h-0 overflow-hidden px-1 transition-opacity duration-200 ${sidebarOpen ? 'opacity-100' : 'opacity-0'}`}>
-          <CourseSidebar />
+          <CourseSidebar onCourseClick={(courseId) => { setActiveCourseFilter({ courseId, ts: Date.now() }); switchTab('tasks') }} />
         </div>
 
         {/* Settings + Sign out at bottom */}
@@ -248,18 +258,19 @@ function MainApp() {
 
         {/* Tab content — lazy keep-alive: mount on first visit, then stay alive via CSS hidden */}
         {visitedTabs.has('calendar') && (
-          <div className={`flex-1 overflow-auto px-3 pt-5 pb-3 ${activeTab === 'calendar' ? 'animate-in fade-in-0 duration-200' : 'hidden'}`}>
+          <div className={`flex-1 overflow-hidden px-3 pt-5 pb-3 ${activeTab === 'calendar' ? 'animate-in fade-in-0 duration-200' : 'hidden'}`}>
             <CalendarTab
               onDateSelect={handleDateSelect}
               onEventClick={handleEventClick}
               onTaskClick={handleTaskClick}
               onSubtaskClick={(subtask) => { setSelectedSubtask(subtask); setSubtaskModalOpen(true) }}
+              onNewTodo={openNewTodo}
             />
           </div>
         )}
         {visitedTabs.has('overview') && (
           <div className={`flex-1 overflow-auto px-6 py-4 ${activeTab === 'overview' ? 'animate-in fade-in-0 duration-200' : 'hidden'}`}>
-            <OverviewTab onTaskClick={handleTaskClick} onDecompose={handleDecompose} onNavigate={(tab) => switchTab(tab as Tab)} onNewEvent={openNewEvent} onNewTask={openNewTask} />
+            <OverviewTab onTaskClick={handleTaskClick} onDecompose={handleDecompose} onNewEvent={openNewEvent} onNewTask={openNewTask} onNewTodo={openNewTodo} />
           </div>
         )}
         {visitedTabs.has('events') && (
@@ -269,7 +280,7 @@ function MainApp() {
         )}
         {visitedTabs.has('tasks') && (
           <div className={`flex-1 overflow-auto px-6 py-4 ${activeTab === 'tasks' ? 'animate-in fade-in-0 duration-200' : 'hidden'}`}>
-            <TasksTab onTaskClick={handleTaskClick} onNewTask={openNewTask} onDecompose={handleDecompose} />
+            <TasksTab onTaskClick={handleTaskClick} onNewTask={openNewTask} onDecompose={handleDecompose} activeCourseFilter={activeCourseFilter} />
           </div>
         )}
         {visitedTabs.has('focus') && (
@@ -295,8 +306,9 @@ function MainApp() {
       />
       <TaskModal
         open={taskModalOpen}
-        onClose={() => setTaskModalOpen(false)}
+        onClose={() => { setTaskModalOpen(false); setTaskDefaultDueDate(undefined) }}
         task={selectedTask}
+        defaultDueDate={taskDefaultDueDate}
         onDecompose={handleDecompose}
       />
       <DecompositionModal
@@ -315,6 +327,32 @@ function MainApp() {
       <SettingsModal
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
+      />
+      <TodoModal
+        open={todoModalOpen}
+        onClose={() => setTodoModalOpen(false)}
+      />
+      <CreateTypeModal
+        open={createTypeModalOpen}
+        onClose={() => setCreateTypeModalOpen(false)}
+        onSelectEvent={() => {
+          if (pendingDateSelect) {
+            setSelectedEvent(undefined)
+            setDefaultStart(pendingDateSelect.start)
+            setDefaultEnd(pendingDateSelect.end)
+            setDefaultAllDay(pendingDateSelect.allDay)
+            setPendingDateSelect(null)
+          }
+          setEventModalOpen(true)
+        }}
+        onSelectTask={() => {
+          setSelectedTask(undefined)
+          if (pendingDateSelect) {
+            setTaskDefaultDueDate(pendingDateSelect.start.toISOString().slice(0, 10))
+            setPendingDateSelect(null)
+          }
+          setTaskModalOpen(true)
+        }}
       />
     </div>
   )

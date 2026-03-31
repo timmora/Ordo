@@ -60,6 +60,7 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
   const [newCourseColor, setNewCourseColor] = useState(PRESET_COLORS[0])
   const [pickerOpen, setPickerOpen] = useState(false)
   const [customColors, setCustomColors] = useState<string[]>([])
+  const [noDueDate, setNoDueDate] = useState(false)
   const [dueDate, setDueDate] = useState('')
   const [dueTime, setDueTime] = useState('')
   const [dueDateInput, setDueDateInput] = useState('')
@@ -78,7 +79,8 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
     if (task) {
       setTitle(task.title)
       setCourseId(task.course_id ?? 'none')
-      setDueDate(task.due_date)
+      setNoDueDate(!task.due_date)
+      setDueDate(task.due_date ?? '')
       setDueTime(task.due_time ?? '')
       setEstimatedHours(task.estimated_hours?.toString() ?? '')
       setPriority(task.priority)
@@ -87,6 +89,7 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
     } else {
       setTitle('')
       setCourseId('none')
+      setNoDueDate(false)
       setDueDate(defaultDueDate ?? '')
       setDueTime('')
       setEstimatedHours('')
@@ -123,7 +126,7 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
     return {
       title: title.trim(),
       course_id: courseId === 'none' ? null : courseId,
-      due_date: dueDate,
+      due_date: noDueDate ? null : dueDate || null,
       due_time: dueTime || null,
       estimated_hours: estimatedHours ? parseFloat(estimatedHours) : null,
       priority,
@@ -148,7 +151,7 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
   }
 
   async function handleSave() {
-    if (!title.trim() || !dueDate) return
+    if (!title.trim()) return
     try {
       setError('')
       if (task) {
@@ -165,7 +168,7 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
   }
 
   async function handleSaveAndDecompose() {
-    if (!title.trim() || !dueDate || !onDecompose) return
+    if (!title.trim() || !onDecompose) return
     try {
       setError('')
       const created = await createTask.mutateAsync(buildPayload())
@@ -341,54 +344,63 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
               <Label>Date</Label>
-              <Popover open={dueDateOpen} onOpenChange={setDueDateOpen}>
+              <button
+                type="button"
+                onClick={() => { setNoDueDate((v) => !v); setDueDate(''); setDueTime('') }}
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {noDueDate ? 'Add due date' : 'No due date'}
+              </button>
+            </div>
+            {!noDueDate && (
+              <div className="grid grid-cols-2 gap-3">
+                <Popover open={dueDateOpen} onOpenChange={setDueDateOpen}>
+                  <div className="relative">
+                    <Input
+                      placeholder="mm/dd/yyyy"
+                      value={dueDateInput}
+                      onChange={(e) => setDueDateInput(e.target.value)}
+                      onBlur={() => {
+                        const d = tryParseDate(dueDateInput)
+                        if (d) setDueDate(format(d, 'yyyy-MM-dd'))
+                        else setDueDateInput(dueDate ? format(parse(dueDate, 'yyyy-MM-dd', new Date()), 'MMM d, yyyy') : '')
+                      }}
+                      className="pr-9"
+                    />
+                    <PopoverTrigger asChild>
+                      <button type="button" className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground hover:text-foreground transition-colors">
+                        <CalendarIcon className="size-4" />
+                      </button>
+                    </PopoverTrigger>
+                  </div>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={dueDate ? parse(dueDate, 'yyyy-MM-dd', new Date()) : undefined}
+                      onSelect={(date) => {
+                        if (date) { setDueDate(format(date, 'yyyy-MM-dd')); setDueDateOpen(false) }
+                      }}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
                 <div className="relative">
                   <Input
-                    placeholder="mm/dd/yyyy"
-                    value={dueDateInput}
-                    onChange={(e) => setDueDateInput(e.target.value)}
-                    onBlur={() => {
-                      const d = tryParseDate(dueDateInput)
-                      if (d) setDueDate(format(d, 'yyyy-MM-dd'))
-                      else setDueDateInput(dueDate ? format(parse(dueDate, 'yyyy-MM-dd', new Date()), 'MMM d, yyyy') : '')
-                    }}
-                    className="pr-9"
+                    type="time"
+                    placeholder="Time (optional)"
+                    value={dueTime}
+                    onChange={(e) => setDueTime(e.target.value)}
+                    className="bg-background appearance-none pr-9 [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none"
                   />
-                  <PopoverTrigger asChild>
-                    <button type="button" className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground hover:text-foreground transition-colors">
-                      <CalendarIcon className="size-4" />
-                    </button>
-                  </PopoverTrigger>
-                </div>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar
-                    mode="single"
-                    selected={dueDate ? parse(dueDate, 'yyyy-MM-dd', new Date()) : undefined}
-                    onSelect={(date) => {
-                      if (date) { setDueDate(format(date, 'yyyy-MM-dd')); setDueDateOpen(false) }
-                    }}
-                    initialFocus
-                  />
-                </PopoverContent>
-              </Popover>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Time (optional)</Label>
-              <div className="relative">
-                <Input
-                  type="time"
-                  value={dueTime}
-                  onChange={(e) => setDueTime(e.target.value)}
-                  className="bg-background appearance-none pr-9 [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none"
-                />
-                <div className="text-muted-foreground pointer-events-none absolute inset-y-0 right-0 flex items-center justify-center pr-3">
-                  <Clock8Icon className="size-4" />
+                  <div className="text-muted-foreground pointer-events-none absolute inset-y-0 right-0 flex items-center justify-center pr-3">
+                    <Clock8Icon className="size-4" />
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -500,14 +512,13 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" className="w-full justify-between font-normal">
-                    {{ todo: 'To Do', in_progress: 'In Progress', done: 'Done' }[status]}
+                    {{ todo: 'In Progress', in_progress: 'In Progress', done: 'Done' }[status]}
                     <ChevronDownIcon />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)]">
                   <DropdownMenuGroup>
-                    {status !== 'todo' && <DropdownMenuItem onSelect={() => setStatus('todo')}>To Do</DropdownMenuItem>}
-                    {status !== 'in_progress' && <DropdownMenuItem onSelect={() => setStatus('in_progress')}>In Progress</DropdownMenuItem>}
+                    {status !== 'todo' && status !== 'in_progress' && <DropdownMenuItem onSelect={() => setStatus('todo')}>In Progress</DropdownMenuItem>}
                     {status !== 'done' && <DropdownMenuItem onSelect={() => setStatus('done')}>Done</DropdownMenuItem>}
                   </DropdownMenuGroup>
                 </DropdownMenuContent>
@@ -550,7 +561,7 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
               <Button
                 variant="outline"
                 onClick={handleSaveAndDecompose}
-                disabled={isPending || !title.trim() || !dueDate}
+                disabled={isPending || !title.trim()}
               >
                 <Sparkles className="size-4 mr-1.5" />
                 {isPending ? 'Saving…' : 'Save & Break Down'}

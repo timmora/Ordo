@@ -74,6 +74,7 @@ export function courseScheduleToFC(courses: Course[]): EventInput[] {
         daysOfWeek: [dayNum],
         backgroundColor: course.color,
         borderColor: course.color,
+        editable: false,
         extendedProps: { type: 'schedule', courseId: course.id },
       })
     }
@@ -86,7 +87,7 @@ export function courseScheduleToFC(courses: Course[]): EventInput[] {
 export function tasksToFC(tasks: Task[], courses: Course[]): EventInput[] {
   const courseMap = new Map(courses.map((c) => [c.id, c]))
 
-  return tasks.map((task) => {
+  return tasks.filter((task) => !!task.due_date).map((task) => {
       const course = task.course_id ? courseMap.get(task.course_id) : undefined
       const color = course?.color ?? '#94a3b8'
       const hasTime = !!task.due_time
