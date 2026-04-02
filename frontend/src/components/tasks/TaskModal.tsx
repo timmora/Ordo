@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
-import { BlockPicker } from 'react-color'
-import { format, parse, isValid } from 'date-fns'
+import { format, parse } from 'date-fns'
+import { tryParseDate } from '@/lib/dateUtils'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog'
@@ -9,12 +9,15 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
+  DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { ChevronDownIcon } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Calendar } from '@/components/ui/calendar'
 import { Sparkles, CalendarIcon, Clock8Icon, Paperclip, X } from 'lucide-react'
+import { ColorPickerField, PRESET_COLORS } from '@/components/shared/ColorPickerField'
+import { CourseDropdown } from '@/components/shared/CourseDropdown'
+import { RecurrenceSelect } from '@/components/shared/RecurrenceSelect'
 import { useQueryClient } from '@tanstack/react-query'
 import { useCourses, useCreateCourse } from '@/hooks/useCourses'
 import { useCreateTask, useUpdateTask } from '@/hooks/useTasks'
@@ -24,11 +27,6 @@ import { supabase } from '@/lib/supabase'
 import { undoableDelete } from '@/lib/undoableDelete'
 import { toast } from 'sonner'
 import type { Task, TaskInsert } from '@/types/database'
-
-const PRESET_COLORS = [
-  '#9B0F06', '#b45309', '#FAE251', '#047857',
-  '#636CCB', '#E491C9',
-]
 
 export interface DecomposeContext {
   task: Task
@@ -58,8 +56,6 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
   const [addingCourse, setAddingCourse] = useState(false)
   const [newCourseName, setNewCourseName] = useState('')
   const [newCourseColor, setNewCourseColor] = useState(PRESET_COLORS[0])
-  const [pickerOpen, setPickerOpen] = useState(false)
-  const [customColors, setCustomColors] = useState<string[]>([])
   const [noDueDate, setNoDueDate] = useState(false)
   const [dueDate, setDueDate] = useState('')
   const [dueTime, setDueTime] = useState('')
@@ -100,7 +96,6 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
     setAddingCourse(false)
     setNewCourseName('')
     setNewCourseColor(PRESET_COLORS[0])
-    setPickerOpen(false)
     setDescription('')
     setFileName('')
     setFileContent('')
@@ -110,17 +105,6 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
   useEffect(() => {
     setDueDateInput(dueDate ? format(parse(dueDate, 'yyyy-MM-dd', new Date()), 'MMM d, yyyy') : '')
   }, [dueDate])
-
-  function tryParseDate(input: string): Date | null {
-    if (!input.trim()) return null
-    const ref = new Date()
-    const fmts = ['MMM d, yyyy', 'MMMM d, yyyy', 'M/d/yyyy', 'MM/dd/yyyy', 'M/d/yy', 'yyyy-MM-dd', 'MMM d']
-    for (const fmt of fmts) {
-      const d = parse(input.trim(), fmt, ref)
-      if (isValid(d)) return d
-    }
-    return null
-  }
 
   function buildPayload(): TaskInsert {
     return {
@@ -245,60 +229,7 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
                   }}
                   autoFocus
                 />
-                <div className="flex gap-1.5 flex-wrap items-center">
-                  {PRESET_COLORS.map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      className="size-6 rounded-full"
-                      style={{
-                        backgroundColor: c,
-                        outline: newCourseColor === c ? `2px solid ${c}` : 'none',
-                        outlineOffset: '2px',
-                      }}
-                      onClick={() => { setNewCourseColor(c); setPickerOpen(false) }}
-                    />
-                  ))}
-                  {customColors.map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      className="size-6 rounded-full"
-                      style={{
-                        backgroundColor: c,
-                        outline: newCourseColor === c ? `2px solid ${c}` : 'none',
-                        outlineOffset: '2px',
-                      }}
-                      onClick={() => { setNewCourseColor(c); setPickerOpen(false) }}
-                    />
-                  ))}
-                  <div className="relative flex items-center">
-                    <button
-                      type="button"
-                      className="size-6 rounded-full border-2 border-dashed border-muted-foreground/40 hover:border-muted-foreground transition-colors"
-                      title="Custom color"
-                      onClick={() => setPickerOpen((o) => !o)}
-                    />
-                    {pickerOpen && (
-                      <>
-                        <div className="fixed inset-0 z-40" onClick={() => setPickerOpen(false)} />
-                        <div className="absolute top-8 left-0 z-50">
-                          <BlockPicker
-                            color={newCourseColor}
-                            onChangeComplete={(c) => {
-                              setNewCourseColor(c.hex)
-                              setPickerOpen(false)
-                              setCustomColors((prev) =>
-                                prev.includes(c.hex) ? prev : [...prev, c.hex]
-                              )
-                            }}
-                            triangle="hide"
-                          />
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </div>
+                <ColorPickerField color={newCourseColor} onChange={setNewCourseColor} swatchSize="sm" />
                 <div className="flex gap-2 justify-end">
                   <Button size="sm" variant="outline" onClick={() => { setAddingCourse(false); setNewCourseName(''); setNewCourseColor(PRESET_COLORS[0]) }}>
                     Cancel
@@ -323,24 +254,7 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
                 </div>
               </div>
             ) : (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" className="w-full justify-between font-normal">
-                    {courseId === 'none' ? 'No course' : courses.find((c) => c.id === courseId)?.name ?? 'No course'}
-                    <ChevronDownIcon />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)]">
-                  <DropdownMenuGroup>
-                    {courseId !== 'none' && <DropdownMenuItem onSelect={() => setCourseId('none')}>No course</DropdownMenuItem>}
-                    {courses.filter((c) => c.id !== courseId).map((c) => (
-                      <DropdownMenuItem key={c.id} onSelect={() => setCourseId(c.id)}>{c.name}</DropdownMenuItem>
-                    ))}
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onSelect={() => setAddingCourse(true)}>+ Add course</DropdownMenuItem>
-                  </DropdownMenuGroup>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <CourseDropdown courseId={courseId} onChange={setCourseId} onAddCourse={() => setAddingCourse(true)} />
             )}
           </div>
 
@@ -437,22 +351,7 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
 
           <div className="space-y-1.5">
             <Label>Repeat</Label>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="w-full justify-between font-normal">
-                  {{ none: 'Does not repeat', 'FREQ=DAILY': 'Daily', 'FREQ=WEEKLY': 'Weekly', 'FREQ=MONTHLY': 'Monthly' }[recurrence] ?? 'Does not repeat'}
-                  <ChevronDownIcon />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)]">
-                <DropdownMenuGroup>
-                  {recurrence !== 'none' && <DropdownMenuItem onSelect={() => setRecurrence('none')}>Does not repeat</DropdownMenuItem>}
-                  {recurrence !== 'FREQ=DAILY' && <DropdownMenuItem onSelect={() => setRecurrence('FREQ=DAILY')}>Daily</DropdownMenuItem>}
-                  {recurrence !== 'FREQ=WEEKLY' && <DropdownMenuItem onSelect={() => setRecurrence('FREQ=WEEKLY')}>Weekly</DropdownMenuItem>}
-                  {recurrence !== 'FREQ=MONTHLY' && <DropdownMenuItem onSelect={() => setRecurrence('FREQ=MONTHLY')}>Monthly</DropdownMenuItem>}
-                </DropdownMenuGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <RecurrenceSelect value={recurrence} onChange={setRecurrence} />
           </div>
 
           {/* AI context — only for new tasks */}
@@ -512,13 +411,14 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" className="w-full justify-between font-normal">
-                    {{ todo: 'In Progress', in_progress: 'In Progress', done: 'Done' }[status]}
+                    {{ todo: 'To Do', in_progress: 'In Progress', done: 'Done' }[status]}
                     <ChevronDownIcon />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)]">
                   <DropdownMenuGroup>
-                    {status !== 'todo' && status !== 'in_progress' && <DropdownMenuItem onSelect={() => setStatus('todo')}>In Progress</DropdownMenuItem>}
+                    {status !== 'todo' && <DropdownMenuItem onSelect={() => setStatus('todo')}>To Do</DropdownMenuItem>}
+                    {status !== 'in_progress' && <DropdownMenuItem onSelect={() => setStatus('in_progress')}>In Progress</DropdownMenuItem>}
                     {status !== 'done' && <DropdownMenuItem onSelect={() => setStatus('done')}>Done</DropdownMenuItem>}
                   </DropdownMenuGroup>
                 </DropdownMenuContent>

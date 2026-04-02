@@ -1,19 +1,18 @@
 import { useState, useEffect } from 'react'
-import { BlockPicker } from 'react-color'
-import { format, parse, isValid } from 'date-fns'
+import { format, parse } from 'date-fns'
+import { tryParseDate } from '@/lib/dateUtils'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { ChevronDownIcon } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Calendar } from '@/components/ui/calendar'
 import { CalendarIcon, Clock8Icon } from 'lucide-react'
+import { ColorPickerField, PRESET_COLORS } from '@/components/shared/ColorPickerField'
+import { CourseDropdown } from '@/components/shared/CourseDropdown'
+import { RecurrenceSelect } from '@/components/shared/RecurrenceSelect'
 import { useCourses, useCreateCourse } from '@/hooks/useCourses'
 import { useQueryClient } from '@tanstack/react-query'
 import { useCreateEvent, useUpdateEvent } from '@/hooks/useEvents'
@@ -21,11 +20,6 @@ import { supabase } from '@/lib/supabase'
 import { undoableDelete } from '@/lib/undoableDelete'
 import { toast } from 'sonner'
 import type { Event, EventInsert } from '@/types/database'
-
-const PRESET_COLORS = [
-  '#9B0F06', '#b45309', '#FAE251', '#047857',
-  '#636CCB', '#E491C9',
-]
 
 interface Props {
   open: boolean
@@ -48,8 +42,6 @@ export function EventModal({ open, onClose, event, defaultStart, defaultEnd, def
   const [addingCourse, setAddingCourse] = useState(false)
   const [newCourseName, setNewCourseName] = useState('')
   const [newCourseColor, setNewCourseColor] = useState(PRESET_COLORS[0])
-  const [pickerOpen, setPickerOpen] = useState(false)
-  const [customColors, setCustomColors] = useState<string[]>([])
   const [allDay, setAllDay] = useState(false)
   const [startDate, setStartDate] = useState('')
   const [startTime, setStartTime] = useState('')
@@ -84,8 +76,6 @@ export function EventModal({ open, onClose, event, defaultStart, defaultEnd, def
       setAddingCourse(false)
       setNewCourseName('')
       setNewCourseColor(PRESET_COLORS[0])
-      setPickerOpen(false)
-      setCustomColors([])
     } else {
       setTitle('')
       setCourseId('none')
@@ -99,8 +89,6 @@ export function EventModal({ open, onClose, event, defaultStart, defaultEnd, def
       setAddingCourse(false)
       setNewCourseName('')
       setNewCourseColor(PRESET_COLORS[0])
-      setPickerOpen(false)
-      setCustomColors([])
     }
     setError('')
   }, [event, open, defaultStart, defaultEnd, defaultAllDay])
@@ -166,17 +154,6 @@ export function EventModal({ open, onClose, event, defaultStart, defaultEnd, def
   useEffect(() => {
     setEndDateInput(endDate ? format(parse(endDate, 'yyyy-MM-dd', new Date()), 'MMM d, yyyy') : '')
   }, [endDate])
-
-  function tryParseDate(input: string): Date | null {
-    if (!input.trim()) return null
-    const ref = new Date()
-    const fmts = ['MMM d, yyyy', 'MMMM d, yyyy', 'M/d/yyyy', 'MM/dd/yyyy', 'M/d/yy', 'yyyy-MM-dd', 'MMM d']
-    for (const fmt of fmts) {
-      const d = parse(input.trim(), fmt, ref)
-      if (isValid(d)) return d
-    }
-    return null
-  }
 
   const startDateParsed = startDate ? parse(startDate, 'yyyy-MM-dd', new Date()) : undefined
 
@@ -250,60 +227,7 @@ export function EventModal({ open, onClose, event, defaultStart, defaultEnd, def
                   }}
                   autoFocus
                 />
-                <div className="flex gap-1.5 flex-wrap items-center">
-                  {PRESET_COLORS.map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      className="size-6 rounded-full"
-                      style={{
-                        backgroundColor: c,
-                        outline: newCourseColor === c ? `2px solid ${c}` : 'none',
-                        outlineOffset: '2px',
-                      }}
-                      onClick={() => { setNewCourseColor(c); setPickerOpen(false) }}
-                    />
-                  ))}
-                  {customColors.map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      className="size-6 rounded-full"
-                      style={{
-                        backgroundColor: c,
-                        outline: newCourseColor === c ? `2px solid ${c}` : 'none',
-                        outlineOffset: '2px',
-                      }}
-                      onClick={() => { setNewCourseColor(c); setPickerOpen(false) }}
-                    />
-                  ))}
-                  <div className="relative flex items-center">
-                    <button
-                      type="button"
-                      className="size-6 rounded-full border-2 border-dashed border-muted-foreground/40 hover:border-muted-foreground transition-colors"
-                      title="Custom color"
-                      onClick={() => setPickerOpen((o) => !o)}
-                    />
-                    {pickerOpen && (
-                      <>
-                        <div className="fixed inset-0 z-40" onClick={() => setPickerOpen(false)} />
-                        <div className="absolute top-8 left-0 z-50">
-                          <BlockPicker
-                            color={newCourseColor}
-                            onChangeComplete={(c) => {
-                              setNewCourseColor(c.hex)
-                              setPickerOpen(false)
-                              setCustomColors((prev) =>
-                                prev.includes(c.hex) ? prev : [...prev, c.hex]
-                              )
-                            }}
-                            triangle="hide"
-                          />
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </div>
+                <ColorPickerField color={newCourseColor} onChange={setNewCourseColor} swatchSize="sm" />
                 <div className="flex gap-2 justify-end">
                   <Button size="sm" variant="outline" onClick={() => { setAddingCourse(false); setNewCourseName(''); setNewCourseColor(PRESET_COLORS[0]) }}>
                     Cancel
@@ -328,24 +252,7 @@ export function EventModal({ open, onClose, event, defaultStart, defaultEnd, def
                 </div>
               </div>
             ) : (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" className="w-full justify-between font-normal">
-                    {courseId === 'none' ? 'No course' : courses.find((c) => c.id === courseId)?.name ?? 'No course'}
-                    <ChevronDownIcon />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)]">
-                  <DropdownMenuGroup>
-                    {courseId !== 'none' && <DropdownMenuItem onSelect={() => setCourseId('none')}>No course</DropdownMenuItem>}
-                    {courses.filter((c) => c.id !== courseId).map((c) => (
-                      <DropdownMenuItem key={c.id} onSelect={() => setCourseId(c.id)}>{c.name}</DropdownMenuItem>
-                    ))}
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onSelect={() => setAddingCourse(true)}>+ Add course</DropdownMenuItem>
-                  </DropdownMenuGroup>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <CourseDropdown courseId={courseId} onChange={setCourseId} onAddCourse={() => setAddingCourse(true)} />
             )}
           </div>
 
@@ -500,22 +407,7 @@ export function EventModal({ open, onClose, event, defaultStart, defaultEnd, def
 
           <div className="space-y-1.5">
             <Label>Repeat</Label>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="w-full justify-between font-normal">
-                  {{ none: 'Does not repeat', 'FREQ=DAILY': 'Daily', 'FREQ=WEEKLY': 'Weekly', 'FREQ=MONTHLY': 'Monthly' }[recurrence] ?? 'Does not repeat'}
-                  <ChevronDownIcon />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)]">
-                <DropdownMenuGroup>
-                  {recurrence !== 'none' && <DropdownMenuItem onSelect={() => setRecurrence('none')}>Does not repeat</DropdownMenuItem>}
-                  {recurrence !== 'FREQ=DAILY' && <DropdownMenuItem onSelect={() => setRecurrence('FREQ=DAILY')}>Daily</DropdownMenuItem>}
-                  {recurrence !== 'FREQ=WEEKLY' && <DropdownMenuItem onSelect={() => setRecurrence('FREQ=WEEKLY')}>Weekly</DropdownMenuItem>}
-                  {recurrence !== 'FREQ=MONTHLY' && <DropdownMenuItem onSelect={() => setRecurrence('FREQ=MONTHLY')}>Monthly</DropdownMenuItem>}
-                </DropdownMenuGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <RecurrenceSelect value={recurrence} onChange={setRecurrence} />
           </div>
 
           {error && <p className="text-sm text-destructive">{error}</p>}

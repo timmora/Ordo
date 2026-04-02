@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 from .auth import get_current_user
 from .config import get_anthropic
-from .utils import extract_text, parse_ai_json
+from .utils import call_ai_with_retry, extract_text, parse_ai_json
 
 router = APIRouter(prefix="/api")
 
@@ -96,24 +96,12 @@ async def parse_syllabus(
         },
     ]
 
-    last_error = None
-    for _ in range(2):
-        try:
-            message = ai.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=4096,
-                system=SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": message_content}],
-            )
-            response_text = extract_text(message)
-            return _parse_response(response_text)
-        except (json.JSONDecodeError, ValueError, KeyError) as e:
-            last_error = e
-            continue
-        except anthropic.APIError:
-            raise HTTPException(status_code=502, detail="AI service temporarily unavailable")
-
-    raise HTTPException(
-        status_code=422,
-        detail=f"Could not parse syllabus after 2 attempts: {last_error}",
+    return call_ai_with_retry(
+        ai,
+        model="claude-sonnet-4-20250514",
+        max_tokens=4096,
+        system=SYSTEM_PROMPT,
+        messages=message_content,
+        parse_fn=_parse_response,
+        error_label="syllabus",
     )

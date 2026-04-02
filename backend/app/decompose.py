@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 from .auth import get_current_user
 from .config import get_anthropic, get_supabase
-from .utils import extract_text, parse_ai_json
+from .utils import call_ai_with_retry, extract_text, parse_ai_json
 
 router = APIRouter(prefix="/api")
 
@@ -156,25 +156,13 @@ async def decompose_task(
         message_content = user_prompt
 
     # Call Anthropic Claude
-    last_error = None
-    for attempt in range(2):
-        try:
-            message = ai.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=1024,
-                system=SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": message_content}],
-            )
-            response_text = extract_text(message)
-            subtasks = _parse_subtasks(response_text)
-            return DecomposeResponse(subtasks=subtasks)
-        except (json.JSONDecodeError, ValueError, KeyError) as e:
-            last_error = e
-            continue
-        except anthropic.APIError:
-            raise HTTPException(status_code=502, detail="AI service temporarily unavailable")
-
-    raise HTTPException(
-        status_code=422,
-        detail=f"Could not parse AI response after 2 attempts: {last_error}",
+    subtasks = call_ai_with_retry(
+        ai,
+        model="claude-sonnet-4-20250514",
+        max_tokens=1024,
+        system=SYSTEM_PROMPT,
+        messages=message_content,
+        parse_fn=_parse_subtasks,
+        error_label="AI response",
     )
+    return DecomposeResponse(subtasks=subtasks)

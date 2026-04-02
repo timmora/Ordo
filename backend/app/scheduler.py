@@ -357,9 +357,11 @@ async def run_schedule(
     # Also fetch overdue tasks (past due, not done) and bump their due_date to today
     overdue_resp = sb.table("tasks").select("id, title, due_date, due_time, priority, status, course_id").eq("user_id", user_id).neq("status", "done").lt("due_date", str(today_date)).not_.is_("due_date", "null").execute()
     overdue_tasks = overdue_resp.data or []
-    for t in overdue_tasks:
-        sb.table("tasks").update({"due_date": str(today_date)}).eq("id", t["id"]).execute()
-        t["due_date"] = str(today_date)
+    if overdue_tasks:
+        overdue_ids = [t["id"] for t in overdue_tasks]
+        sb.table("tasks").update({"due_date": str(today_date)}).in_("id", overdue_ids).execute()
+        for t in overdue_tasks:
+            t["due_date"] = str(today_date)
     tasks = (tasks_resp.data or []) + overdue_tasks
     task_map = {t["id"]: t for t in tasks}
     task_ids = list(task_map.keys())
@@ -373,14 +375,15 @@ async def run_schedule(
 
     # If force, clear all scheduled times first
     if force:
+        scheduled_ids = [s["id"] for s in all_subtasks if s.get("scheduled_start")]
+        if scheduled_ids:
+            sb.table("subtasks").update({
+                "scheduled_start": None,
+                "scheduled_end": None,
+            }).in_("id", scheduled_ids).execute()
         for s in all_subtasks:
-            if s.get("scheduled_start"):
-                sb.table("subtasks").update({
-                    "scheduled_start": None,
-                    "scheduled_end": None,
-                }).eq("id", s["id"]).execute()
-                s["scheduled_start"] = None
-                s["scheduled_end"] = None
+            s["scheduled_start"] = None
+            s["scheduled_end"] = None
 
     # Separate already-scheduled vs unscheduled
     to_schedule = []

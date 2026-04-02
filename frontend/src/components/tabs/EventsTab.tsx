@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useEvents } from '@/hooks/useEvents'
-import { useCourses } from '@/hooks/useCourses'
+import { useCourses, useCourseMap } from '@/hooks/useCourses'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger,
@@ -55,10 +55,7 @@ export function EventsTab({ onEventClick, onNewEvent }: Props) {
     })
   }
 
-  const courseMap = useMemo(
-    () => Object.fromEntries(courses.map((c) => [c.id, c])),
-    [courses],
-  )
+  const courseMap = useCourseMap()
 
   const filtered = useMemo(() => {
     const now = new Date()

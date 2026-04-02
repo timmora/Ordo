@@ -12,7 +12,7 @@ export function useFocusSessions(date: string) {
         .from('focus_sessions')
         .select('*')
         .gte('completed_at', `${date}T00:00:00`)
-        .lt('completed_at', `${date}T23:59:59`)
+        .lt('completed_at', `${date}T24:00:00`)
         .order('completed_at', { ascending: true })
       if (error) throw error
       return data ?? []

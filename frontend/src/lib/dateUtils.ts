@@ -5,6 +5,21 @@
  * to eliminate duplication.
  */
 
+import { parse, isValid } from 'date-fns'
+
+const FLEXIBLE_DATE_FORMATS = ['MMM d, yyyy', 'MMMM d, yyyy', 'M/d/yyyy', 'MM/dd/yyyy', 'M/d/yy', 'yyyy-MM-dd', 'MMM d']
+
+/** Try to parse a flexible date input string. Returns a Date or null. */
+export function tryParseDate(input: string): Date | null {
+  if (!input.trim()) return null
+  const ref = new Date()
+  for (const fmt of FLEXIBLE_DATE_FORMATS) {
+    const d = parse(input.trim(), fmt, ref)
+    if (isValid(d)) return d
+  }
+  return null
+}
+
 /** Format an ISO date string (YYYY-MM-DD) as "Wed, Mar 5". */
 export function formatDate(dateStr: string): string {
   const d = new Date(dateStr + 'T00:00:00')

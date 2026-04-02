@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useTasks, useUpdateTask } from '@/hooks/useTasks'
 import { useEvents } from '@/hooks/useEvents'
-import { useCourses } from '@/hooks/useCourses'
+import { useCourses, useCourseMap } from '@/hooks/useCourses'
 import { useFocusSessions } from '@/hooks/useFocusSessions'
 import { useOverviewSummary } from '@/hooks/useOverviewSummary'
 import { LiveClock } from '@/components/LiveClock'
@@ -65,21 +65,22 @@ export function OverviewTab({ onTaskClick, onDecompose, onNewEvent, onNewTask, o
   const { data: userSettings } = useUserSettings()
   const schedule = useSchedule()
 
+  const allSubtasks = useMemo(
+    () => Array.from(allSubtasksMap?.values() ?? []).flat(),
+    [allSubtasksMap],
+  )
+
   const todayCapacity = useMemo(() => {
     const cap = userSettings?.daily_capacity_hours ?? 6
-    const allSubtasks = Array.from(allSubtasksMap?.values() ?? []).flat()
     const scheduledToday = allSubtasks.filter((s) => {
       if (!s.scheduled_start || s.status === 'complete') return false
       return s.scheduled_start.slice(0, 10) === todayDate
     })
     const usedMinutes = scheduledToday.reduce((sum, s) => sum + s.estimated_minutes, 0)
     return { used: Math.round(usedMinutes / 6) / 10, cap }
-  }, [allSubtasksMap, userSettings, todayDate])
+  }, [allSubtasks, userSettings, todayDate])
 
-  const courseMap = useMemo(
-    () => Object.fromEntries(courses.map((c) => [c.id, c])),
-    [courses]
-  )
+  const courseMap = useCourseMap()
 
   const todayEvents = useMemo(() => {
     return events

@@ -202,7 +202,7 @@ export interface FocusSession {
   user_id: string
   task_id: string | null
   subtask_id: string | null
-  mode: 'focus' | 'break' | 'short_break' | 'long_break'
+  mode: 'focus' | 'break'
   duration_seconds: number
   completed_at: string
 }

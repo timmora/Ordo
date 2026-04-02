@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTasks, useUpdateTask, useBulkUpdateTasks } from '@/hooks/useTasks'
-import { useCourses } from '@/hooks/useCourses'
+import { useCourses, useCourseMap } from '@/hooks/useCourses'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -226,10 +226,7 @@ export function TasksTab({ onTaskClick, onNewTask, onDecompose, activeCourseFilt
     }
   }
 
-  const courseMap = useMemo(
-    () => Object.fromEntries(courses.map((c) => [c.id, c])),
-    [courses]
-  )
+  const courseMap = useCourseMap()
 
   const filtered = useMemo(() => {
     const today = todayStr()
@@ -402,11 +399,9 @@ export function TasksTab({ onTaskClick, onNewTask, onDecompose, activeCourseFilt
         </div>
       ) : (
         <div className="space-y-2">
-          {filtered.map((task) => {
+          {(() => { const today = todayStr(); const now = new Date(); return filtered.map((task) => {
             const course = task.course_id ? courseMap[task.course_id] : null
             const done = task.status === 'done'
-            const today = todayStr()
-            const now = new Date()
             let overdue = false
             if (!done && task.due_date) {
               if (task.due_date < today) {
@@ -576,7 +571,7 @@ export function TasksTab({ onTaskClick, onNewTask, onDecompose, activeCourseFilt
                 )}
               </div>
             )
-          })}
+          }) })()}
         </div>
       )}
       <SubtaskModal
