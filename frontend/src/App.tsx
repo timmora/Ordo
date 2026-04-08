@@ -20,6 +20,7 @@ import { TasksTab } from '@/components/tabs/TasksTab'
 import { EventsTab } from '@/components/tabs/EventsTab'
 import { FocusTab } from '@/components/tabs/FocusTab'
 import { JournalTab } from '@/components/tabs/JournalTab'
+import { useReminderNotifications } from '@/hooks/useReminderNotifications'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -54,6 +55,7 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
 ]
 
 function MainApp() {
+  useReminderNotifications()
   const [activeTab, setActiveTab] = useState<Tab>('overview')
   const [eventModalOpen, setEventModalOpen] = useState(false)
   const [taskModalOpen, setTaskModalOpen] = useState(false)
@@ -153,6 +155,8 @@ function MainApp() {
       description: ctx.description,
       fileContent: ctx.fileContent,
       fileName: ctx.fileName,
+      fileData: ctx.fileData,
+      fileMediaType: ctx.fileMediaType,
     })
     setDecomposeModalOpen(true)
   }
@@ -176,7 +180,8 @@ function MainApp() {
           <button
             type="button"
             onClick={handleSidebarToggle}
-            className="absolute right-0 top-0 flex items-center justify-center w-8 h-8 text-muted-foreground hover:text-foreground transition-colors"
+            aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+            className="absolute right-0 top-0 flex items-center justify-center w-8 h-8 text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
           >
             {sidebarOpen ? <PanelLeftClose className="size-4" /> : <PanelLeftOpen className="size-4" />}
           </button>
@@ -187,7 +192,7 @@ function MainApp() {
           <button
             type="button"
             onClick={openNewEvent}
-            className="flex items-center gap-2 w-full h-8 px-2 rounded-md text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors overflow-hidden"
+            className="flex items-center gap-2 w-full h-8 px-2 rounded-md text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <CalendarPlus className="size-4 shrink-0" />
             <span className={`whitespace-nowrap transition-opacity duration-200 ${sidebarOpen ? 'opacity-100' : 'opacity-0 w-0 overflow-hidden'}`}>Add Event</span>
@@ -195,7 +200,7 @@ function MainApp() {
           <button
             type="button"
             onClick={openNewTask}
-            className="flex items-center gap-2 w-full h-8 px-2 rounded-md text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors overflow-hidden"
+            className="flex items-center gap-2 w-full h-8 px-2 rounded-md text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <ListPlus className="size-4 shrink-0" />
             <span className={`whitespace-nowrap transition-opacity duration-200 ${sidebarOpen ? 'opacity-100' : 'opacity-0 w-0 overflow-hidden'}`}>Add Task</span>
@@ -212,7 +217,7 @@ function MainApp() {
           <button
             type="button"
             onClick={() => setSettingsOpen(true)}
-            className="flex items-center gap-2 w-full h-8 px-2 rounded-md text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors overflow-hidden"
+            className="flex items-center gap-2 w-full h-8 px-2 rounded-md text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <Settings className="size-4 shrink-0" />
             <span className={`whitespace-nowrap transition-opacity duration-200 ${sidebarOpen ? 'opacity-100' : 'opacity-0 w-0 overflow-hidden'}`}>Settings</span>
@@ -220,7 +225,7 @@ function MainApp() {
           <button
             type="button"
             onClick={handleSignOut}
-            className="flex items-center gap-2 w-full h-8 px-2 rounded-md text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors overflow-hidden"
+            className="flex items-center gap-2 w-full h-8 px-2 rounded-md text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <LogOut className="size-4 shrink-0" />
             <span className={`whitespace-nowrap transition-opacity duration-200 ${sidebarOpen ? 'opacity-100' : 'opacity-0 w-0 overflow-hidden'}`}>Sign out</span>
@@ -239,6 +244,7 @@ function MainApp() {
                 key={tab.id}
                 type="button"
                 onClick={() => switchTab(tab.id)}
+                aria-current={activeTab === tab.id ? 'page' : undefined}
                 className={`flex items-center px-2.5 @2xl:px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                   activeTab === tab.id
                     ? 'bg-accent text-accent-foreground'
@@ -270,7 +276,14 @@ function MainApp() {
         )}
         {visitedTabs.has('overview') && (
           <div className={`flex-1 overflow-auto px-6 py-4 ${activeTab === 'overview' ? 'animate-in fade-in-0 duration-200' : 'hidden'}`}>
-            <OverviewTab onTaskClick={handleTaskClick} onDecompose={handleDecompose} onNewEvent={openNewEvent} onNewTask={openNewTask} onNewTodo={openNewTodo} />
+            <OverviewTab
+              onTaskClick={handleTaskClick}
+              onSubtaskClick={(subtask) => { setSelectedSubtask(subtask); setSubtaskModalOpen(true) }}
+              onDecompose={handleDecompose}
+              onNewEvent={openNewEvent}
+              onNewTask={openNewTask}
+              onNewTodo={openNewTodo}
+            />
           </div>
         )}
         {visitedTabs.has('events') && (
@@ -318,6 +331,8 @@ function MainApp() {
         initialDescription={decomposeContext.description}
         initialFileContent={decomposeContext.fileContent}
         initialFileName={decomposeContext.fileName}
+        initialFileData={decomposeContext.fileData}
+        initialFileMediaType={decomposeContext.fileMediaType}
       />
       <SubtaskModal
         open={subtaskModalOpen}

@@ -392,6 +392,9 @@ async def run_schedule(
         task = task_map.get(s["task_id"])
         if not task:
             continue
+        if s.get("is_todo"):
+            # Intentionally unscheduled to-do items are excluded from auto-scheduling
+            continue
         if s.get("scheduled_start") and s.get("scheduled_end"):
             # Already scheduled — keep as busy time
             start = datetime.fromisoformat(s["scheduled_start"])
@@ -445,6 +448,11 @@ async def run_schedule(
             new_end=update["scheduled_end"],
             action="moved" if (original and original.get("scheduled_start")) else "scheduled",
         ))
+
+    # Invalidate today's cached briefing so it reflects latest schedule changes.
+    # The next overview-summary request will regenerate fresh content.
+    if scheduled_updates or force:
+        sb.table("daily_summaries").delete().eq("user_id", user_id).eq("date", str(today_date)).execute()
 
     return ScheduleResponse(
         scheduled_count=len(scheduled_updates),

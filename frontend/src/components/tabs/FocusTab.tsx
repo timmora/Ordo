@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { todayStr } from '@/lib/dateUtils'
 import { useTasks } from '@/hooks/useTasks'
-import { useSubtasks, useUpdateSubtask } from '@/hooks/useSubtasks'
-import { useFocusSessions, useFocusSessionsByTask, useCreateFocusSession, useFocusStreak } from '@/hooks/useFocusSessions'
+import { useSubtasks, useUpdateSubtask, useAllSubtasks } from '@/hooks/useSubtasks'
+import { useFocusSessions, useFocusSessionsByTask, useCreateFocusSession, useFocusStreak, useRecentFocusSessions } from '@/hooks/useFocusSessions'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
@@ -61,6 +61,8 @@ export function FocusTab() {
   const { data: sessions = [] } = useFocusSessions(todayStr())
   const createSession = useCreateFocusSession()
   const { data: streak = 0 } = useFocusStreak()
+  const { data: recentFocusSessions = [] } = useRecentFocusSessions(30)
+  const { data: allSubtasksMap } = useAllSubtasks()
 
   const updateSubtask = useUpdateSubtask()
   const [durations, setDurations] = useState<Record<Mode, number>>(loadDurations)
@@ -210,6 +212,7 @@ export function FocusTab() {
   const { data: subtasks = [] } = useSubtasks(activeTaskId)
   const { subtaskMinutesMap } = useFocusSessionsByTask(activeTaskId)
   const pendingSubtasks = subtasks.filter((s) => s.status !== 'complete')
+  const allSubtasks = Array.from(allSubtasksMap?.values() ?? []).flat()
 
   // Selected subtask info
   const selectedSubtask = selectedSubtaskId !== 'none'
@@ -220,6 +223,21 @@ export function FocusTab() {
   const subtaskProgressPct = selectedSubtask
     ? Math.min(100, Math.round((focusedMinutes / selectedSubtask.estimated_minutes) * 100))
     : 0
+
+  const estimateAccuracy = (() => {
+    const subtaskById = new Map(allSubtasks.map((s) => [s.id, s]))
+    let estimated = 0
+    let actual = 0
+    for (const session of recentFocusSessions) {
+      if (!session.subtask_id) continue
+      const sub = subtaskById.get(session.subtask_id)
+      if (!sub) continue
+      estimated += sub.estimated_minutes
+      actual += Math.round(session.duration_seconds / 60)
+    }
+    if (estimated === 0) return 0
+    return Math.max(0, Math.round((1 - Math.abs(actual - estimated) / estimated) * 100))
+  })()
 
   return (
     <div className="max-w-lg mx-auto py-6 space-y-8">
@@ -475,7 +493,7 @@ export function FocusTab() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="rounded-lg border bg-card p-4">
           <p className="text-xs text-muted-foreground mb-1">Sessions today</p>
           <p className="text-2xl font-semibold">{sessionsToday}</p>
@@ -487,6 +505,10 @@ export function FocusTab() {
         <div className="rounded-lg border bg-card p-4">
           <p className="text-xs text-muted-foreground mb-1">Day streak</p>
           <p className="text-2xl font-semibold">{streak > 0 ? `${streak}d` : '—'}</p>
+        </div>
+        <div className="rounded-lg border bg-card p-4">
+          <p className="text-xs text-muted-foreground mb-1">Estimate accuracy (30d)</p>
+          <p className="text-2xl font-semibold">{estimateAccuracy}%</p>
         </div>
       </div>
     </div>

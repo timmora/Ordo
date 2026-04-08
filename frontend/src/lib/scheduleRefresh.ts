@@ -29,6 +29,7 @@ export function refreshSchedule(qc: QueryClient) {
       if (res.ok) {
         const data = await res.json()
         qc.invalidateQueries({ queryKey: ['subtasks', '_all'] })
+        qc.invalidateQueries({ queryKey: ['overview-summary'] })
         if (data.changes?.length > 0) {
           useScheduleStore.getState().setPendingChanges(data.changes)
         }

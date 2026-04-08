@@ -33,6 +33,8 @@ export interface DecomposeContext {
   description?: string
   fileContent?: string
   fileName?: string
+  fileData?: string
+  fileMediaType?: string
 }
 
 interface Props {
@@ -68,8 +70,12 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
   const [description, setDescription] = useState('')
   const [fileName, setFileName] = useState('')
   const [fileContent, setFileContent] = useState('')
+  const [fileData, setFileData] = useState('')
+  const [fileMediaType, setFileMediaType] = useState('')
   const [error, setError] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [reminderEnabled, setReminderEnabled] = useState(false)
+  const [reminderMinutesBefore, setReminderMinutesBefore] = useState<number>(30)
 
   useEffect(() => {
     if (task) {
@@ -82,6 +88,8 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
       setPriority(task.priority)
       setStatus(task.status)
       setRecurrence(task.recurrence_rule ?? 'none')
+      setReminderEnabled(task.reminder_enabled ?? false)
+      setReminderMinutesBefore(task.reminder_minutes_before ?? 30)
     } else {
       setTitle('')
       setCourseId('none')
@@ -92,6 +100,8 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
       setPriority('medium')
       setStatus('todo')
       setRecurrence('none')
+      setReminderEnabled(false)
+      setReminderMinutesBefore(30)
     }
     setAddingCourse(false)
     setNewCourseName('')
@@ -99,6 +109,8 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
     setDescription('')
     setFileName('')
     setFileContent('')
+    setFileData('')
+    setFileMediaType('')
     setError('')
   }, [task, open, defaultDueDate])
 
@@ -116,6 +128,9 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
       priority,
       status,
       recurrence_rule: recurrence === 'none' ? null : recurrence,
+      reminder_enabled: reminderEnabled,
+      reminder_minutes_before: reminderEnabled ? reminderMinutesBefore : null,
+      reminder_last_sent_at: null,
     }
   }
 
@@ -123,14 +138,31 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
     const file = e.target.files?.[0]
     if (!file) return
     setFileName(file.name)
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
     const reader = new FileReader()
-    reader.onload = () => setFileContent(reader.result as string)
-    reader.readAsText(file)
+    if (isPdf) {
+      reader.onload = () => {
+        const dataUrl = reader.result as string
+        setFileData(dataUrl.split(',')[1] ?? '')
+        setFileMediaType('application/pdf')
+        setFileContent('')
+      }
+      reader.readAsDataURL(file)
+    } else {
+      reader.onload = () => {
+        setFileContent(reader.result as string)
+        setFileData('')
+        setFileMediaType('')
+      }
+      reader.readAsText(file)
+    }
   }
 
   function removeFile() {
     setFileName('')
     setFileContent('')
+    setFileData('')
+    setFileMediaType('')
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
@@ -163,6 +195,8 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
         description: description.trim() || undefined,
         fileContent: fileContent || undefined,
         fileName: fileName || undefined,
+        fileData: fileData || undefined,
+        fileMediaType: fileMediaType || undefined,
       })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save task')
@@ -354,6 +388,64 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
             <RecurrenceSelect value={recurrence} onChange={setRecurrence} />
           </div>
 
+          <div className="space-y-2 rounded-md border p-3">
+            <div className="flex items-center justify-between gap-2">
+              <Label htmlFor="task-reminder-enabled">Reminder</Label>
+              <button
+                type="button"
+                role="checkbox"
+                aria-checked={reminderEnabled}
+                aria-label="Enable task reminders"
+                onClick={() => setReminderEnabled((v) => !v)}
+                className={`w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-all duration-200 ${
+                  reminderEnabled
+                    ? 'bg-green-500 dark:bg-emerald-500 border-green-500 dark:border-emerald-500'
+                    : 'border-muted-foreground hover:border-green-500 dark:hover:border-emerald-400'
+                }`}
+              >
+                {reminderEnabled && (
+                  <span className="animate-in fade-in-0 zoom-in-75 duration-150 flex items-center justify-center">
+                    <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                  </span>
+                )}
+              </button>
+            </div>
+            {reminderEnabled && (
+              <div className="space-y-1.5">
+                <Label>Remind me</Label>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" className="w-full justify-between font-normal">
+                      {{
+                        5: '5 minutes before',
+                        10: '10 minutes before',
+                        15: '15 minutes before',
+                        30: '30 minutes before',
+                        60: '1 hour before',
+                        120: '2 hours before',
+                        1440: '1 day before',
+                      }[reminderMinutesBefore as 5 | 10 | 15 | 30 | 60 | 120 | 1440]}
+                      <ChevronDownIcon />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)]">
+                    <DropdownMenuGroup>
+                      {reminderMinutesBefore !== 5 && <DropdownMenuItem onSelect={() => setReminderMinutesBefore(5)}>5 minutes before</DropdownMenuItem>}
+                      {reminderMinutesBefore !== 10 && <DropdownMenuItem onSelect={() => setReminderMinutesBefore(10)}>10 minutes before</DropdownMenuItem>}
+                      {reminderMinutesBefore !== 15 && <DropdownMenuItem onSelect={() => setReminderMinutesBefore(15)}>15 minutes before</DropdownMenuItem>}
+                      {reminderMinutesBefore !== 30 && <DropdownMenuItem onSelect={() => setReminderMinutesBefore(30)}>30 minutes before</DropdownMenuItem>}
+                      {reminderMinutesBefore !== 60 && <DropdownMenuItem onSelect={() => setReminderMinutesBefore(60)}>1 hour before</DropdownMenuItem>}
+                      {reminderMinutesBefore !== 120 && <DropdownMenuItem onSelect={() => setReminderMinutesBefore(120)}>2 hours before</DropdownMenuItem>}
+                      {reminderMinutesBefore !== 1440 && <DropdownMenuItem onSelect={() => setReminderMinutesBefore(1440)}>1 day before</DropdownMenuItem>}
+                    </DropdownMenuGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            )}
+          </div>
+
           {/* AI context — only for new tasks */}
           {!task && (
             <div className="space-y-3 rounded-md border border-dashed p-3">
@@ -375,7 +467,7 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".txt,.md,.csv,.json,.html,.py,.js,.ts,.tex,.rtf"
+                  accept=".pdf,.txt,.md,.csv,.json,.html,.py,.js,.ts,.tex,.rtf"
                   onChange={handleFileChange}
                   className="hidden"
                 />
@@ -457,7 +549,7 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
           )}
           <div className="flex gap-2 ml-auto">
             <Button variant="outline" onClick={onClose}>Cancel</Button>
-            {!task && onDecompose && (description || fileContent) && (
+            {!task && onDecompose && (description || fileContent || fileData) && (
               <Button
                 variant="outline"
                 onClick={handleSaveAndDecompose}

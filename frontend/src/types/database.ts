@@ -41,6 +41,9 @@ export interface Database {
           color: string | null
           all_day: boolean
           recurrence_rule: string | null
+          reminder_enabled: boolean
+          reminder_minutes_before: number | null
+          reminder_last_sent_at: string | null
           created_at: string
         }
         Insert: {
@@ -54,6 +57,9 @@ export interface Database {
           color?: string | null
           all_day?: boolean
           recurrence_rule?: string | null
+          reminder_enabled?: boolean
+          reminder_minutes_before?: number | null
+          reminder_last_sent_at?: string | null
           created_at?: string
         }
         Update: {
@@ -67,6 +73,9 @@ export interface Database {
           color?: string | null
           all_day?: boolean
           recurrence_rule?: string | null
+          reminder_enabled?: boolean
+          reminder_minutes_before?: number | null
+          reminder_last_sent_at?: string | null
           created_at?: string
         }
       }
@@ -82,6 +91,9 @@ export interface Database {
           priority: 'low' | 'medium' | 'high'
           status: 'todo' | 'in_progress' | 'done'
           recurrence_rule: string | null
+          reminder_enabled: boolean
+          reminder_minutes_before: number | null
+          reminder_last_sent_at: string | null
           created_at: string
         }
         Insert: {
@@ -95,6 +107,9 @@ export interface Database {
           priority?: 'low' | 'medium' | 'high'
           status?: 'todo' | 'in_progress' | 'done'
           recurrence_rule?: string | null
+          reminder_enabled?: boolean
+          reminder_minutes_before?: number | null
+          reminder_last_sent_at?: string | null
           created_at?: string
         }
         Update: {
@@ -108,6 +123,9 @@ export interface Database {
           priority?: 'low' | 'medium' | 'high'
           status?: 'todo' | 'in_progress' | 'done'
           recurrence_rule?: string | null
+          reminder_enabled?: boolean
+          reminder_minutes_before?: number | null
+          reminder_last_sent_at?: string | null
           created_at?: string
         }
       }
@@ -140,6 +158,7 @@ export interface Subtask {
   estimated_minutes: number
   scheduled_start: string | null
   scheduled_end: string | null
+  is_todo: boolean
   status: 'pending' | 'in_progress' | 'complete'
   created_at: string
 }
@@ -151,6 +170,7 @@ export interface SubtaskInsert {
   estimated_minutes: number
   scheduled_start?: string | null
   scheduled_end?: string | null
+  is_todo?: boolean
   status?: 'pending' | 'in_progress' | 'complete'
 }
 
@@ -160,6 +180,7 @@ export interface SubtaskUpdate {
   estimated_minutes?: number
   scheduled_start?: string | null
   scheduled_end?: string | null
+  is_todo?: boolean
   status?: 'pending' | 'in_progress' | 'complete'
 }
 

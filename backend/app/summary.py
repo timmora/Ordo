@@ -1,5 +1,5 @@
 import json
-from datetime import time
+from datetime import time, date
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import anthropic
@@ -92,6 +92,24 @@ async def overview_summary(
         except Exception:
             return iso_str
 
+    def weekday_from_date_str(date_str: str | None) -> str | None:
+        if not date_str:
+            return None
+        try:
+            return date.fromisoformat(date_str).strftime("%A")
+        except Exception:
+            return None
+
+    def weekday_from_iso(iso_str: str | None) -> str | None:
+        if not iso_str:
+            return None
+        try:
+            parsed = dt.fromisoformat(iso_str)
+            local = parsed.astimezone(local_tz)
+            return local.strftime("%A")
+        except Exception:
+            return None
+
     # Group subtasks by task_id
     subtasks = subtasks_resp.data or []
     subtask_map: dict[str, list] = {}
@@ -109,6 +127,7 @@ async def overview_summary(
         task_subtasks = subtask_map.get(t.get("id"), [])
         if task_subtasks:
             t["subtasks"] = task_subtasks
+        t["due_weekday"] = weekday_from_date_str(t.get("due_date"))
         # Mark overdue / due today / upcoming
         if t.get("status") == "done":
             t["time_status"] = "done"
@@ -130,6 +149,7 @@ async def overview_summary(
         t.pop("id", None)
     for e in events:
         e["course"] = course_map.get(e.get("course_id"), None)
+        e["start_weekday"] = weekday_from_iso(e.get("start_time"))
         # Determine if event has already passed
         raw_end = e.get("end_time") or e.get("start_time")
         if raw_end and not e.get("all_day"):
@@ -151,6 +171,10 @@ async def overview_summary(
     user_prompt = f"""Today is {today.strftime('%A, %B %d, %Y')}. Current time is {now_local.strftime('%I:%M %p')}.
 Events marked "past" have already ended — do not refer to them as upcoming.
 Tasks have a "time_status" field: "overdue" means past due, "due_today" means due today but not yet overdue, "upcoming" means due in the future, "done" means completed. Respect these statuses in your briefing.
+Use provided weekday fields exactly:
+- task "due_weekday"
+- event "start_weekday"
+Do not infer weekday names from raw date strings.
 
 Tasks (this week):
 {json.dumps(tasks, indent=2, default=str)}

@@ -18,6 +18,7 @@ interface Props {
 export function SubtaskModal({ open, onClose, subtask }: Props) {
   const [title, setTitle] = useState('')
   const [minutes, setMinutes] = useState('')
+  const [asTodo, setAsTodo] = useState(false)
   const updateSubtask = useUpdateSubtask()
   const deleteSubtask = useDeleteSubtask()
 
@@ -25,6 +26,7 @@ export function SubtaskModal({ open, onClose, subtask }: Props) {
     if (subtask) {
       setTitle(subtask.title)
       setMinutes(String(subtask.estimated_minutes))
+      setAsTodo(subtask.is_todo || !subtask.scheduled_start || !subtask.scheduled_end)
     }
   }, [subtask])
 
@@ -36,6 +38,9 @@ export function SubtaskModal({ open, onClose, subtask }: Props) {
         id: subtask.id,
         title: title.trim(),
         ...(Number.isFinite(mins) && mins > 0 ? { estimated_minutes: mins } : {}),
+        ...(asTodo
+          ? { scheduled_start: null, scheduled_end: null, is_todo: true }
+          : { is_todo: false }),
       },
       {
         onSuccess: () => {
@@ -85,6 +90,33 @@ export function SubtaskModal({ open, onClose, subtask }: Props) {
               onChange={(e) => setMinutes(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') handleSave() }}
             />
+          </div>
+
+          <div className="flex items-center justify-between rounded-md border p-3">
+            <div>
+              <p className="text-sm font-medium">Make this a to-do</p>
+              <p className="text-xs text-muted-foreground">Removes scheduled time until you place it again.</p>
+            </div>
+            <button
+              type="button"
+              role="checkbox"
+              aria-checked={asTodo}
+              aria-label="Mark subtask as to-do"
+              onClick={() => setAsTodo((v) => !v)}
+              className={`w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-all duration-200 ${
+                asTodo
+                  ? 'bg-green-500 dark:bg-emerald-500 border-green-500 dark:border-emerald-500'
+                  : 'border-muted-foreground hover:border-green-500 dark:hover:border-emerald-400'
+              }`}
+            >
+              {asTodo && (
+                <span className="animate-in fade-in-0 zoom-in-75 duration-150 flex items-center justify-center">
+                  <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                </span>
+              )}
+            </button>
           </div>
         </div>
 

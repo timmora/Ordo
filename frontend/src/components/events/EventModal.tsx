@@ -7,9 +7,12 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Calendar } from '@/components/ui/calendar'
-import { CalendarIcon, Clock8Icon } from 'lucide-react'
+import { CalendarIcon, Clock8Icon, ChevronDownIcon } from 'lucide-react'
 import { ColorPickerField, PRESET_COLORS } from '@/components/shared/ColorPickerField'
 import { CourseDropdown } from '@/components/shared/CourseDropdown'
 import { RecurrenceSelect } from '@/components/shared/RecurrenceSelect'
@@ -50,6 +53,8 @@ export function EventModal({ open, onClose, event, defaultStart, defaultEnd, def
   const [location, setLocation] = useState('')
   const [recurrence, setRecurrence] = useState<string>('none')
   const [error, setError] = useState('')
+  const [reminderEnabled, setReminderEnabled] = useState(false)
+  const [reminderMinutesBefore, setReminderMinutesBefore] = useState<number>(30)
   const [startDateInput, setStartDateInput] = useState('')
   const [endDateInput, setEndDateInput] = useState('')
   const [startDateOpen, setStartDateOpen] = useState(false)
@@ -73,6 +78,8 @@ export function EventModal({ open, onClose, event, defaultStart, defaultEnd, def
       }
       setLocation(event.location ?? '')
       setRecurrence(event.recurrence_rule ?? 'none')
+      setReminderEnabled(event.reminder_enabled ?? false)
+      setReminderMinutesBefore(event.reminder_minutes_before ?? 30)
       setAddingCourse(false)
       setNewCourseName('')
       setNewCourseColor(PRESET_COLORS[0])
@@ -86,6 +93,8 @@ export function EventModal({ open, onClose, event, defaultStart, defaultEnd, def
       setEndTime(defaultEnd && !defaultAllDay ? format(defaultEnd, 'HH:mm') : '')
       setLocation('')
       setRecurrence('none')
+      setReminderEnabled(false)
+      setReminderMinutesBefore(30)
       setAddingCourse(false)
       setNewCourseName('')
       setNewCourseColor(PRESET_COLORS[0])
@@ -111,6 +120,9 @@ export function EventModal({ open, onClose, event, defaultStart, defaultEnd, def
       all_day: allDay,
       location: location.trim() || null,
       recurrence_rule: recurrence === 'none' ? null : recurrence,
+      reminder_enabled: reminderEnabled,
+      reminder_minutes_before: reminderEnabled ? reminderMinutesBefore : null,
+      reminder_last_sent_at: null,
       color: course ? (courses.find((c) => c.id === course)?.color ?? null) : null,
     }
   }
@@ -408,6 +420,64 @@ export function EventModal({ open, onClose, event, defaultStart, defaultEnd, def
           <div className="space-y-1.5">
             <Label>Repeat</Label>
             <RecurrenceSelect value={recurrence} onChange={setRecurrence} />
+          </div>
+
+          <div className="space-y-2 rounded-md border p-3">
+            <div className="flex items-center justify-between gap-2">
+              <Label htmlFor="event-reminder-enabled">Reminder</Label>
+              <button
+                type="button"
+                role="checkbox"
+                aria-checked={reminderEnabled}
+                aria-label="Enable event reminders"
+                onClick={() => setReminderEnabled((v) => !v)}
+                className={`w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-all duration-200 ${
+                  reminderEnabled
+                    ? 'bg-green-500 dark:bg-emerald-500 border-green-500 dark:border-emerald-500'
+                    : 'border-muted-foreground hover:border-green-500 dark:hover:border-emerald-400'
+                }`}
+              >
+                {reminderEnabled && (
+                  <span className="animate-in fade-in-0 zoom-in-75 duration-150 flex items-center justify-center">
+                    <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                  </span>
+                )}
+              </button>
+            </div>
+            {reminderEnabled && (
+              <div className="space-y-1.5">
+                <Label>Remind me</Label>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" className="w-full justify-between font-normal">
+                      {{
+                        5: '5 minutes before',
+                        10: '10 minutes before',
+                        15: '15 minutes before',
+                        30: '30 minutes before',
+                        60: '1 hour before',
+                        120: '2 hours before',
+                        1440: '1 day before',
+                      }[reminderMinutesBefore as 5 | 10 | 15 | 30 | 60 | 120 | 1440]}
+                      <ChevronDownIcon />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)]">
+                    <DropdownMenuGroup>
+                      {reminderMinutesBefore !== 5 && <DropdownMenuItem onSelect={() => setReminderMinutesBefore(5)}>5 minutes before</DropdownMenuItem>}
+                      {reminderMinutesBefore !== 10 && <DropdownMenuItem onSelect={() => setReminderMinutesBefore(10)}>10 minutes before</DropdownMenuItem>}
+                      {reminderMinutesBefore !== 15 && <DropdownMenuItem onSelect={() => setReminderMinutesBefore(15)}>15 minutes before</DropdownMenuItem>}
+                      {reminderMinutesBefore !== 30 && <DropdownMenuItem onSelect={() => setReminderMinutesBefore(30)}>30 minutes before</DropdownMenuItem>}
+                      {reminderMinutesBefore !== 60 && <DropdownMenuItem onSelect={() => setReminderMinutesBefore(60)}>1 hour before</DropdownMenuItem>}
+                      {reminderMinutesBefore !== 120 && <DropdownMenuItem onSelect={() => setReminderMinutesBefore(120)}>2 hours before</DropdownMenuItem>}
+                      {reminderMinutesBefore !== 1440 && <DropdownMenuItem onSelect={() => setReminderMinutesBefore(1440)}>1 day before</DropdownMenuItem>}
+                    </DropdownMenuGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            )}
           </div>
 
           {error && <p className="text-sm text-destructive">{error}</p>}

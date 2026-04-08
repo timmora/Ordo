@@ -53,6 +53,23 @@ export function useFocusSessionsByTask(taskId: string | undefined) {
 export const useCreateFocusSession = () =>
   useSupabaseInsert<FocusSessionInsert, FocusSession>('focus_sessions', [['focus_sessions']])
 
+export function useRecentFocusSessions(days: number) {
+  return useQuery<FocusSession[]>({
+    queryKey: ['focus_sessions', 'recent', days],
+    queryFn: async () => {
+      const since = new Date()
+      since.setDate(since.getDate() - days)
+      const { data, error } = await supabase
+        .from('focus_sessions')
+        .select('*')
+        .eq('mode', 'focus')
+        .gte('completed_at', since.toISOString())
+      if (error) throw error
+      return data ?? []
+    },
+  })
+}
+
 /** Compute consecutive days with at least one focus session (streak). */
 export function useFocusStreak() {
   return useQuery({

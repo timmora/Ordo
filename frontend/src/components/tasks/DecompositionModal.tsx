@@ -6,6 +6,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { GripVertical, X, Plus, Loader2, RefreshCw, Paperclip } from 'lucide-react'
 import {
   DndContext,
@@ -50,6 +53,7 @@ interface DraftSubtask {
   tempId: string
   title: string
   estimated_minutes: number
+  schedule_mode: 'scheduled' | 'todo'
 }
 
 interface Props {
@@ -59,6 +63,8 @@ interface Props {
   initialDescription?: string
   initialFileContent?: string
   initialFileName?: string
+  initialFileData?: string
+  initialFileMediaType?: string
 }
 
 function SortableSubtaskRow({
@@ -116,6 +122,27 @@ function SortableSubtaskRow({
         onChange={(e) => onUpdate('estimated_minutes', parseInt(e.target.value) || 0)}
       />
       <span className="text-xs text-muted-foreground shrink-0">min</span>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" size="sm" className="h-8 px-2 text-xs justify-between min-w-24">
+            {draft.schedule_mode === 'todo' ? 'To-do' : 'Scheduled'}
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuGroup>
+            {draft.schedule_mode !== 'scheduled' && (
+              <DropdownMenuItem onSelect={() => onUpdate('schedule_mode', 'scheduled')}>
+                Scheduled
+              </DropdownMenuItem>
+            )}
+            {draft.schedule_mode !== 'todo' && (
+              <DropdownMenuItem onSelect={() => onUpdate('schedule_mode', 'todo')}>
+                To-do
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
 
       <button
         type="button"
@@ -128,7 +155,16 @@ function SortableSubtaskRow({
   )
 }
 
-export function DecompositionModal({ open, onClose, task, initialDescription, initialFileContent, initialFileName }: Props) {
+export function DecompositionModal({
+  open,
+  onClose,
+  task,
+  initialDescription,
+  initialFileContent,
+  initialFileName,
+  initialFileData,
+  initialFileMediaType,
+}: Props) {
   const [drafts, setDrafts] = useState<DraftSubtask[]>([])
   const [hasGenerated, setHasGenerated] = useState(false)
   const [description, setDescription] = useState('')
@@ -156,8 +192,10 @@ export function DecompositionModal({ open, onClose, task, initialDescription, in
       if (initialDescription) setDescription(initialDescription)
       if (initialFileContent) setFileContent(initialFileContent)
       if (initialFileName) setFileName(initialFileName)
+      if (initialFileData) setFileData(initialFileData)
+      if (initialFileMediaType) setFileMediaType(initialFileMediaType)
       // Auto-generate if context was provided
-      if (initialDescription || initialFileContent) {
+      if (initialDescription || initialFileContent || initialFileData) {
         autoGenerateRef.current = true
       }
     } else {
@@ -171,7 +209,7 @@ export function DecompositionModal({ open, onClose, task, initialDescription, in
       decompose.reset()
       autoGenerateRef.current = false
     }
-  }, [open, task?.id])
+  }, [open, task?.id, initialDescription, initialFileContent, initialFileName, initialFileData, initialFileMediaType])
 
   // Auto-generate after initial context is populated
   useEffect(() => {
@@ -232,6 +270,7 @@ export function DecompositionModal({ open, onClose, task, initialDescription, in
               tempId: crypto.randomUUID(),
               title: s.title,
               estimated_minutes: s.estimated_minutes,
+              schedule_mode: 'scheduled',
             }))
           )
           toast.success(`Generated ${suggestions.length} subtask${suggestions.length !== 1 ? 's' : ''}`)
@@ -276,7 +315,7 @@ export function DecompositionModal({ open, onClose, task, initialDescription, in
   function addDraft() {
     setDrafts((prev) => [
       ...prev,
-      { tempId: crypto.randomUUID(), title: '', estimated_minutes: 30 },
+      { tempId: crypto.randomUUID(), title: '', estimated_minutes: 30, schedule_mode: 'scheduled' },
     ])
   }
 
@@ -293,6 +332,9 @@ export function DecompositionModal({ open, onClose, task, initialDescription, in
       title: d.title,
       order_index: i,
       estimated_minutes: d.estimated_minutes,
+      scheduled_start: d.schedule_mode === 'todo' ? null : undefined,
+      scheduled_end: d.schedule_mode === 'todo' ? null : undefined,
+      is_todo: d.schedule_mode === 'todo',
     }))
 
     await createSubtasks.mutateAsync(inserts)
@@ -418,6 +460,9 @@ export function DecompositionModal({ open, onClose, task, initialDescription, in
                 <span>{drafts.length} subtask{drafts.length !== 1 ? 's' : ''}</span>
                 <span>Total: {totalDisplay}</span>
               </div>
+              <p className="text-xs text-muted-foreground">
+                To-do subtasks are unscheduled until you place them.
+              </p>
 
               <DndContext
                 sensors={sensors}

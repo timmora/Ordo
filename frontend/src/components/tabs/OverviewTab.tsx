@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react'
 import { useTasks, useUpdateTask } from '@/hooks/useTasks'
 import { useEvents } from '@/hooks/useEvents'
-import { useCourses, useCourseMap } from '@/hooks/useCourses'
-import { useFocusSessions } from '@/hooks/useFocusSessions'
+import { useCourseMap } from '@/hooks/useCourses'
+import { useFocusSessions, useRecentFocusSessions } from '@/hooks/useFocusSessions'
 import { useOverviewSummary } from '@/hooks/useOverviewSummary'
 import { LiveClock } from '@/components/LiveClock'
 import { Badge } from '@/components/ui/badge'
-import { useTasksWithSubtasks, useAllSubtasks } from '@/hooks/useSubtasks'
+import { useTasksWithSubtasks, useAllSubtasks, useUpdateSubtask } from '@/hooks/useSubtasks'
 import { useUserSettings } from '@/hooks/useUserSettings'
 import { useSchedule } from '@/hooks/useSchedule'
 import { Sparkles, RefreshCw, CalendarSync } from 'lucide-react'
@@ -14,7 +14,7 @@ import { OverviewTabSkeleton } from '@/components/skeletons'
 import { Skeleton } from '@/components/ui/skeleton'
 import { formatDate, todayStr, formatTime, priorityVariant } from '@/lib/dateUtils'
 import type { DecomposeContext } from '@/components/tasks/TaskModal'
-import type { Task } from '@/types/database'
+import type { Subtask, Task } from '@/types/database'
 
 const QUOTES = [
   'In the middle of difficulty lies opportunity.',
@@ -45,21 +45,30 @@ type OverviewView = 'today' | 'upcoming' | 'todo'
 
 interface Props {
   onTaskClick: (task: Task) => void
+  onSubtaskClick?: (subtask: Subtask) => void
   onDecompose?: (ctx: DecomposeContext) => void
   onNewEvent?: () => void
   onNewTask?: () => void
   onNewTodo?: () => void
 }
 
-export function OverviewTab({ onTaskClick, onDecompose, onNewEvent, onNewTask, onNewTodo }: Props) {
+export function OverviewTab({
+  onTaskClick,
+  onSubtaskClick,
+  onDecompose,
+  onNewEvent,
+  onNewTask,
+  onNewTodo,
+}: Props) {
   const [view, setView] = useState<OverviewView>('today')
   const { data: tasks = [], isLoading: tasksLoading } = useTasks()
   const { data: events = [], isLoading: eventsLoading } = useEvents()
-  const { data: courses = [] } = useCourses()
   const todayDate = todayStr()
   const { data: focusSessions = [] } = useFocusSessions(todayDate)
+  const { data: recentFocusSessions = [] } = useRecentFocusSessions(30)
   const { data: decomposedTaskIds } = useTasksWithSubtasks()
   const updateTask = useUpdateTask()
+  const updateSubtask = useUpdateSubtask()
   const { data: aiSummary, isFetching: summaryBusy, error: summaryError, regenerateSummary } = useOverviewSummary()
   const { data: allSubtasksMap } = useAllSubtasks()
   const { data: userSettings } = useUserSettings()
@@ -109,8 +118,8 @@ export function OverviewTab({ onTaskClick, onDecompose, onNewEvent, onNewTask, o
 
   const upcomingTasks = useMemo(() => {
     return tasks
-      .filter((t) => t.due_date > todayDate && t.status !== 'done')
-      .sort((a, b) => a.due_date.localeCompare(b.due_date) || (a.status === 'done' ? 1 : 0) - (b.status === 'done' ? 1 : 0))
+      .filter((t) => !!t.due_date && t.due_date > todayDate && t.status !== 'done')
+      .sort((a, b) => (a.due_date ?? '').localeCompare(b.due_date ?? '') || (a.status === 'done' ? 1 : 0) - (b.status === 'done' ? 1 : 0))
   }, [tasks, todayDate])
 
   const doneTasks = todayTasks.filter((t) => t.status === 'done')
@@ -124,6 +133,30 @@ export function OverviewTab({ onTaskClick, onDecompose, onNewEvent, onNewTask, o
         .reduce((sum, s) => sum + s.duration_seconds, 0) / 60
     )
   }, [focusSessions])
+
+  const estimateInsights = useMemo(() => {
+    const subtaskById = new Map(allSubtasks.map((s) => [s.id, s]))
+    const focusedBySubtask = new Map<string, number>()
+    for (const session of recentFocusSessions) {
+      if (!session.subtask_id) continue
+      focusedBySubtask.set(
+        session.subtask_id,
+        (focusedBySubtask.get(session.subtask_id) ?? 0) + Math.round(session.duration_seconds / 60),
+      )
+    }
+    let estimated = 0
+    let actual = 0
+    let overrun = 0
+    for (const [subtaskId, focusedMin] of focusedBySubtask.entries()) {
+      const sub = subtaskById.get(subtaskId)
+      if (!sub) continue
+      estimated += sub.estimated_minutes
+      actual += focusedMin
+      overrun += Math.max(0, focusedMin - sub.estimated_minutes)
+    }
+    const accuracy = estimated > 0 ? Math.max(0, Math.round((1 - Math.abs(actual - estimated) / estimated) * 100)) : 0
+    return { estimated, actual, overrun, accuracy }
+  }, [allSubtasks, recentFocusSessions])
 
   function toggleTask(task: Task) {
     updateTask.mutate({
@@ -189,7 +222,7 @@ export function OverviewTab({ onTaskClick, onDecompose, onNewEvent, onNewTask, o
       </div>
 
       {/* Stats row */}
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="rounded-lg border bg-card p-4">
           <p className="text-xs text-muted-foreground mb-1">Tasks today</p>
           <p className="text-2xl font-semibold">{todayTasks.length}</p>
@@ -473,7 +506,7 @@ export function OverviewTab({ onTaskClick, onDecompose, onNewEvent, onNewTask, o
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
                         <span className="text-xs text-muted-foreground">
-                          {formatDate(task.due_date)}
+                          {task.due_date ? formatDate(task.due_date) : 'No due date'}
                         </span>
                         <Badge variant={priorityVariant(task.priority)} className="text-xs">
                           {task.priority}
@@ -507,6 +540,7 @@ export function OverviewTab({ onTaskClick, onDecompose, onNewEvent, onNewTask, o
 
       {view === 'todo' && (() => {
         const unscheduled = tasks.filter((t) => !t.due_date && t.status !== 'done')
+        const unscheduledSubtasks = allSubtasks.filter((s) => s.status !== 'complete' && (s.is_todo || !s.scheduled_start || !s.scheduled_end))
         return (
           <div>
             <div className="flex items-center justify-between mb-2">
@@ -519,7 +553,7 @@ export function OverviewTab({ onTaskClick, onDecompose, onNewEvent, onNewTask, o
                 </button>
               )}
             </div>
-            {unscheduled.length === 0 ? (
+            {unscheduled.length === 0 && unscheduledSubtasks.length === 0 ? (
               <p className="text-sm text-muted-foreground italic">
                 No unscheduled tasks.{onNewTodo && <>{' '}<button type="button" onClick={onNewTodo} className="underline underline-offset-2 hover:text-foreground transition-colors">Add one</button></>}
               </p>
@@ -537,6 +571,7 @@ export function OverviewTab({ onTaskClick, onDecompose, onNewEvent, onNewTask, o
                         type="button"
                         role="checkbox"
                         aria-checked={done}
+                        aria-label={`Mark "${task.title}" as ${done ? 'incomplete' : 'complete'}`}
                         onClick={() => toggleTask(task)}
                         className={`w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-all duration-200 ${
                           done
@@ -562,6 +597,16 @@ export function OverviewTab({ onTaskClick, onDecompose, onNewEvent, onNewTask, o
                         <Badge variant={priorityVariant(task.priority)} className="text-xs">
                           {task.priority}
                         </Badge>
+                        {onDecompose && !done && !decomposedTaskIds?.has(task.id) && (
+                          <button
+                            type="button"
+                            onClick={() => onDecompose({ task })}
+                            className="p-1 text-muted-foreground hover:text-amber-500 transition-colors"
+                            title="Break it down"
+                          >
+                            <Sparkles className="size-3.5" />
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => onTaskClick(task)}
@@ -569,6 +614,58 @@ export function OverviewTab({ onTaskClick, onDecompose, onNewEvent, onNewTask, o
                         >
                           Edit
                         </button>
+                      </div>
+                    </div>
+                  )
+                })}
+                {unscheduledSubtasks.map((subtask) => {
+                  const parent = tasks.find((t) => t.id === subtask.task_id)
+                  const course = parent?.course_id ? courseMap[parent.course_id] : null
+                  const done = subtask.status === 'complete'
+                  return (
+                    <div key={subtask.id} className="flex items-center gap-3 rounded-lg border bg-card px-3 py-2.5 hover:bg-muted/40 transition-colors">
+                      <button
+                        type="button"
+                        role="checkbox"
+                        aria-checked={done}
+                        aria-label={`Mark "${subtask.title}" as ${done ? 'incomplete' : 'complete'}`}
+                        onClick={() => updateSubtask.mutate({ id: subtask.id, status: done ? 'pending' : 'complete' })}
+                        className={`w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-all duration-200 ${
+                          done
+                            ? 'bg-green-500 dark:bg-emerald-500 border-green-500 dark:border-emerald-500'
+                            : 'border-muted-foreground hover:border-green-500 dark:hover:border-emerald-400'
+                        }`}
+                      >
+                        {done && (
+                          <span className="animate-in fade-in-0 zoom-in-75 duration-150 flex items-center justify-center">
+                            <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                          </span>
+                        )}
+                      </button>
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-sm font-medium truncate ${done ? 'line-through text-muted-foreground' : ''}`}>{subtask.title}</p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {course ? `${course.name} · ` : ''}{parent?.title ?? 'Subtask'}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {parent && (
+                          <Badge variant={priorityVariant(parent.priority)} className="text-xs">
+                            {parent.priority}
+                          </Badge>
+                        )}
+                        <span className="text-xs text-muted-foreground">{subtask.estimated_minutes}m</span>
+                        {onSubtaskClick && (
+                          <button
+                            type="button"
+                            onClick={() => onSubtaskClick(subtask)}
+                            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                          >
+                            Edit
+                          </button>
+                        )}
                       </div>
                     </div>
                   )

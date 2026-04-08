@@ -76,6 +76,7 @@ function SortableSubtaskRow({ sub, unlocked, onToggle, onEdit, selectMode, isSel
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); onSelect() }}
+          aria-label={isSelected ? `Deselect subtask ${sub.title}` : `Select subtask ${sub.title}`}
           className={`w-3.5 h-3.5 rounded border-2 shrink-0 flex items-center justify-center transition-all duration-200 ${
             isSelected
               ? 'bg-blue-500 dark:bg-blue-400 border-blue-500 dark:border-blue-400'
@@ -301,6 +302,7 @@ export function TasksTab({ onTaskClick, onNewTask, onDecompose, activeCourseFilt
               key={tab.id}
               type="button"
               onClick={() => setFilterTab(tab.id)}
+              aria-pressed={filterTab === tab.id}
               className={`px-3 py-1.5 text-sm transition-colors ${
                 filterTab === tab.id
                   ? 'bg-foreground text-background'
@@ -348,6 +350,11 @@ export function TasksTab({ onTaskClick, onNewTask, onDecompose, activeCourseFilt
               </DropdownMenuGroup>
             </DropdownMenuContent>
           </DropdownMenu>
+        )}
+        {(filterTab !== 'all' || priorityFilter !== 'all' || courseFilter !== 'all') && (
+          <Button size="sm" variant="ghost" onClick={() => { setFilterTab('all'); setPriorityFilter('all'); setCourseFilter('all') }}>
+            Clear filters
+          </Button>
         )}
       </div>
 
@@ -439,6 +446,7 @@ export function TasksTab({ onTaskClick, onNewTask, onDecompose, activeCourseFilt
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); toggleSelect(task.id) }}
+                      aria-label={selectedIds.has(task.id) ? `Deselect task ${task.title}` : `Select task ${task.title}`}
                       className={`w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-all duration-200 ${
                         selectedIds.has(task.id)
                           ? 'bg-blue-500 dark:bg-blue-400 border-blue-500 dark:border-blue-400'

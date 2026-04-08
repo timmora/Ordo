@@ -85,6 +85,14 @@ export function CalendarView({ onDateSelect, onEventClick, onTaskClick, onSubtas
     () => tasks.filter((t) => !t.due_date && t.status !== 'done'),
     [tasks],
   )
+  const unscheduledSubtasks = useMemo(
+    () => allSubtasks.filter((s) => s.status !== 'complete' && (s.is_todo || !s.scheduled_start || !s.scheduled_end)),
+    [allSubtasks],
+  )
+  const taskMap = useMemo(
+    () => new Map(tasks.map((t) => [t.id, t])),
+    [tasks],
+  )
 
   function changeView(view: string) {
     setCalendarView(view)
@@ -126,7 +134,12 @@ export function CalendarView({ onDateSelect, onEventClick, onTaskClick, onSubtas
       updateTask.mutate({ id: dbTask.id, due_date: newDate, due_time: newTime || null })
     }
     if (type === 'subtask' && dbSubtask) {
-      updateSubtask.mutate({ id: dbSubtask.id, scheduled_start: arg.event.startStr, scheduled_end: arg.event.endStr ?? undefined })
+      updateSubtask.mutate({
+        id: dbSubtask.id,
+        scheduled_start: arg.event.startStr,
+        scheduled_end: arg.event.endStr ?? undefined,
+        is_todo: false,
+      })
     }
     if (type === 'event' && dbEvent) {
       updateEvent.mutate({ id: dbEvent.id, start_time: arg.event.startStr, end_time: arg.event.endStr ?? null })
@@ -251,6 +264,7 @@ export function CalendarView({ onDateSelect, onEventClick, onTaskClick, onSubtas
       className="fc-button fc-button-primary shrink-0"
       style={{ borderRadius: '9999px', padding: '0.4em 0.75em', margin: 0, display: 'inline-flex', alignItems: 'center', gap: '0.55em' }}
       onClick={() => setViewMode(viewMode === 'calendar' ? 'list' : 'calendar')}
+      aria-label={viewMode === 'calendar' ? 'Switch to list view' : 'Switch to calendar view'}
     >
       <CalendarDays className={`size-4 ${viewMode !== 'calendar' ? 'opacity-40' : ''}`} />
       <span className="w-px self-stretch bg-current opacity-30" />
@@ -271,6 +285,7 @@ export function CalendarView({ onDateSelect, onEventClick, onTaskClick, onSubtas
               type="button"
               className="fc-button fc-button-primary shrink-0"
               onClick={() => calendarRef.current?.getApi().today()}
+              aria-label="Go to today"
             >
               Today
             </button>
@@ -279,6 +294,7 @@ export function CalendarView({ onDateSelect, onEventClick, onTaskClick, onSubtas
               type="button"
               className="fc-button fc-button-primary shrink-0 flex items-center gap-1"
               onClick={onNewTodo}
+                aria-label="Add to-do task"
             >
               Add
               <Plus className="size-4" />
@@ -318,7 +334,7 @@ export function CalendarView({ onDateSelect, onEventClick, onTaskClick, onSubtas
           {viewMode === 'calendar' && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button type="button" className="fc-button fc-button-primary shrink-0 flex items-center gap-1">
+                <button type="button" aria-label="Choose calendar range" className="fc-button fc-button-primary shrink-0 flex items-center gap-1">
                   {currentViewLabel}
                   <ChevronDown className="size-3" />
                 </button>
@@ -385,58 +401,85 @@ export function CalendarView({ onDateSelect, onEventClick, onTaskClick, onSubtas
       {viewMode === 'list' && (
         <div className="flex-1 min-h-0 flex justify-center overflow-y-auto py-4">
           <div className="w-full max-w-2xl bg-card border rounded-xl shadow-sm p-4 space-y-1.5 h-fit">
-            {unscheduledTasks.length === 0 ? (
+            {unscheduledTasks.length === 0 && unscheduledSubtasks.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-12 italic">No unscheduled tasks.</p>
             ) : (
-              unscheduledTasks.map((task) => {
-                const course = task.course_id ? courseMap.get(task.course_id) : null
-                const done = task.status === 'done'
-                return (
-                  <div
-                    key={task.id}
-                    className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 hover:bg-muted/50 transition-colors text-left"
-                  >
-                    <button
-                      type="button"
-                      role="checkbox"
-                      aria-checked={done}
-                      aria-label={`Mark "${task.title}" as ${done ? 'incomplete' : 'complete'}`}
-                      className={`w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-all duration-200 ${
-                        done
-                          ? 'bg-green-500 dark:bg-emerald-500 border-green-500 dark:border-emerald-500'
-                          : 'border-muted-foreground hover:border-green-500 dark:hover:border-emerald-400'
-                      }`}
-                      onClick={() => updateTask.mutate({ id: task.id, status: done ? 'todo' : 'done' })}
+              <>
+                {unscheduledTasks.map((task) => {
+                  const course = task.course_id ? courseMap.get(task.course_id) : null
+                  const done = task.status === 'done'
+                  return (
+                    <div
+                      key={task.id}
+                      className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 hover:bg-muted/50 transition-colors text-left"
                     >
-                      {done && (
-                        <span className="animate-in fade-in-0 zoom-in-75 duration-150 flex items-center justify-center">
-                          <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                          </svg>
-                        </span>
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      className="flex-1 min-w-0 text-left"
-                      onClick={() => onTaskClick(task)}
-                    >
-                      <div className="flex items-center gap-3">
-                        {course && (
-                          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: course.color }} />
+                      <button
+                        type="button"
+                        role="checkbox"
+                        aria-checked={done}
+                        aria-label={`Mark "${task.title}" as ${done ? 'incomplete' : 'complete'}`}
+                        className={`w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-all duration-200 ${
+                          done
+                            ? 'bg-green-500 dark:bg-emerald-500 border-green-500 dark:border-emerald-500'
+                            : 'border-muted-foreground hover:border-green-500 dark:hover:border-emerald-400'
+                        }`}
+                        onClick={() => updateTask.mutate({ id: task.id, status: done ? 'todo' : 'done' })}
+                      >
+                        {done && (
+                          <span className="animate-in fade-in-0 zoom-in-75 duration-150 flex items-center justify-center">
+                            <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                          </span>
                         )}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">{task.title}</p>
-                          {course && <p className="text-xs text-muted-foreground">{course.name}</p>}
+                      </button>
+                      <button type="button" className="flex-1 min-w-0 text-left" onClick={() => onTaskClick(task)}>
+                        <div className="flex items-center gap-3">
+                          {course && <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: course.color }} />}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">{task.title}</p>
+                            {course && <p className="text-xs text-muted-foreground">{course.name}</p>}
+                          </div>
                         </div>
-                      </div>
-                    </button>
-                    <Badge variant={priorityVariant(task.priority)} className="text-xs shrink-0">
-                      {task.priority}
-                    </Badge>
-                  </div>
-                )
-              })
+                      </button>
+                      <Badge variant={priorityVariant(task.priority)} className="text-xs shrink-0">{task.priority}</Badge>
+                    </div>
+                  )
+                })}
+                {unscheduledSubtasks.map((subtask) => {
+                  const parent = taskMap.get(subtask.task_id)
+                  const course = parent?.course_id ? courseMap.get(parent.course_id) : null
+                  const done = subtask.status === 'complete'
+                  return (
+                    <div key={subtask.id} className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 hover:bg-muted/50 transition-colors text-left">
+                      <button
+                        type="button"
+                        role="checkbox"
+                        aria-checked={done}
+                        aria-label={`Mark subtask "${subtask.title}" as ${done ? 'incomplete' : 'complete'}`}
+                        className={`w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-all duration-200 ${
+                          done
+                            ? 'bg-green-500 dark:bg-emerald-500 border-green-500 dark:border-emerald-500'
+                            : 'border-muted-foreground hover:border-green-500 dark:hover:border-emerald-400'
+                        }`}
+                        onClick={() => updateSubtask.mutate({ id: subtask.id, status: done ? 'pending' : 'complete' })}
+                      >
+                        {done && <span className="animate-in fade-in-0 zoom-in-75 duration-150 flex items-center justify-center"><svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg></span>}
+                      </button>
+                      <button type="button" className="flex-1 min-w-0 text-left" onClick={() => onSubtaskClick(subtask)}>
+                        <div className="flex items-center gap-3">
+                          {course && <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: course.color }} />}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">{subtask.title}</p>
+                            <p className="text-xs text-muted-foreground truncate">{parent?.title ?? 'Subtask'}</p>
+                          </div>
+                        </div>
+                      </button>
+                      <span className="text-xs text-muted-foreground shrink-0">{subtask.estimated_minutes}m</span>
+                    </div>
+                  )
+                })}
+              </>
             )}
           </div>
         </div>
