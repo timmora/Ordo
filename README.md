@@ -80,7 +80,7 @@ backend/app/
 ├── scheduler.py        Dynamic subtask scheduling
 └── config.py           Env config + cached Supabase/Anthropic clients
 
-supabase/migrations/    8 SQL migrations (courses, events, tasks, subtasks,
+supabase/migrations/    11 SQL migrations (courses, events, tasks, subtasks,
                         focus_sessions, journal_entries, daily_summaries,
                         user_settings) — all with RLS
 ```
