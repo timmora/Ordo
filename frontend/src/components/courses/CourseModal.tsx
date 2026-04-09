@@ -112,11 +112,11 @@ export function CourseModal({ open, onClose, course, onCourseCreated }: Props) {
       setError('')
       if (course) {
         await updateCourse.mutateAsync({ id: course.id, name: name.trim(), color, schedule })
-        toast.success(`"${name.trim()}" updated`)
+        toast.success('Course updated')
       } else {
         const created = await createCourse.mutateAsync({ name: name.trim(), color, schedule })
         onCourseCreated?.(created)
-        toast.success(`"${name.trim()}" created`)
+        toast.success('Course created')
       }
       onClose()
     } catch (err) {
@@ -129,7 +129,7 @@ export function CourseModal({ open, onClose, course, onCourseCreated }: Props) {
     try {
       setError('')
       await deleteCourse.mutateAsync(course.id)
-      toast.success(`"${course?.name}" deleted`)
+      toast.success('Course deleted')
       onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete course')
@@ -150,7 +150,7 @@ export function CourseModal({ open, onClose, course, onCourseCreated }: Props) {
         setSyllabusTasks(result.tasks)
         setSyllabusReviewing(true)
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to parse syllabus')
+        toast.error(err instanceof Error ? err.message : 'Could not parse syllabus')
       }
     }
     reader.readAsDataURL(syllabusFile)
@@ -194,10 +194,10 @@ export function CourseModal({ open, onClose, course, onCourseCreated }: Props) {
       }
 
       onCourseCreated?.(created)
-      toast.success(`"${syllabusCourseName.trim()}" created with ${created_count} task${created_count !== 1 ? 's' : ''}`)
+      toast.success(`Course imported with ${created_count} task${created_count !== 1 ? 's' : ''}`)
       onClose()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to import')
+      toast.error(err instanceof Error ? err.message : 'Could not import syllabus')
     }
   }
 

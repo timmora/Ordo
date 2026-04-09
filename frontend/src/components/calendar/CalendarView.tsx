@@ -20,6 +20,9 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Badge } from '@/components/ui/badge'
 import { priorityVariant } from '@/lib/dateUtils'
+import { InlineEmptyState } from '@/components/shared/InlineEmptyState'
+import { RowEditAction } from '@/components/shared/RowEditAction'
+import { RowMetaGroup, RowMetaText } from '@/components/shared/RowMeta'
 
 type ViewMode = 'calendar' | 'list'
 
@@ -45,6 +48,7 @@ export function CalendarView({ onDateSelect, onEventClick, onTaskClick, onSubtas
   const [viewMode, setViewMode] = useState<ViewMode>('calendar')
   const [calendarView, setCalendarView] = useState('timeGridWeek')
   const [calendarTitle, setCalendarTitle] = useState('')
+  const [showRecentDone, setShowRecentDone] = useState(false)
 
   useEffect(() => {
     const el = containerRef.current
@@ -85,8 +89,24 @@ export function CalendarView({ onDateSelect, onEventClick, onTaskClick, onSubtas
     () => tasks.filter((t) => !t.due_date && t.status !== 'done'),
     [tasks],
   )
+  const recentDoneTasks = useMemo(
+    () =>
+      tasks
+        .filter((t) => !t.due_date && t.status === 'done')
+        .sort((a, b) => b.created_at.localeCompare(a.created_at))
+        .slice(0, 5),
+    [tasks],
+  )
   const unscheduledSubtasks = useMemo(
     () => allSubtasks.filter((s) => s.status !== 'complete' && (s.is_todo || !s.scheduled_start || !s.scheduled_end)),
+    [allSubtasks],
+  )
+  const recentDoneSubtasks = useMemo(
+    () =>
+      allSubtasks
+        .filter((s) => s.status === 'complete' && (s.is_todo || !s.scheduled_start || !s.scheduled_end))
+        .sort((a, b) => b.created_at.localeCompare(a.created_at))
+        .slice(0, 5),
     [allSubtasks],
   )
   const taskMap = useMemo(
@@ -402,7 +422,9 @@ export function CalendarView({ onDateSelect, onEventClick, onTaskClick, onSubtas
         <div className="flex-1 min-h-0 flex justify-center overflow-y-auto py-4">
           <div className="w-full max-w-2xl bg-card border rounded-xl shadow-sm p-4 space-y-1.5 h-fit">
             {unscheduledTasks.length === 0 && unscheduledSubtasks.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-12 italic">No unscheduled tasks.</p>
+              <div className="py-8">
+                <InlineEmptyState message="No unscheduled tasks." actionLabel="Add one" onAction={onNewTodo} />
+              </div>
             ) : (
               <>
                 {unscheduledTasks.map((task) => {
@@ -442,7 +464,13 @@ export function CalendarView({ onDateSelect, onEventClick, onTaskClick, onSubtas
                           </div>
                         </div>
                       </button>
-                      <Badge variant={priorityVariant(task.priority)} className="text-xs shrink-0">{task.priority}</Badge>
+                      <RowMetaGroup>
+                        {task.estimated_hours && (
+                          <RowMetaText>{task.estimated_hours}h</RowMetaText>
+                        )}
+                        <Badge variant={priorityVariant(task.priority)} className="text-xs shrink-0">{task.priority}</Badge>
+                        <RowEditAction onClick={(_e) => onTaskClick(task)} />
+                      </RowMetaGroup>
                     </div>
                   )
                 })}
@@ -475,11 +503,110 @@ export function CalendarView({ onDateSelect, onEventClick, onTaskClick, onSubtas
                           </div>
                         </div>
                       </button>
-                      <span className="text-xs text-muted-foreground shrink-0">{subtask.estimated_minutes}m</span>
+                      <RowMetaGroup>
+                        {parent && (
+                          <Badge variant={priorityVariant(parent.priority)} className="text-xs">
+                            {parent.priority}
+                          </Badge>
+                        )}
+                        <RowMetaText>{subtask.estimated_minutes}m</RowMetaText>
+                        <RowEditAction onClick={(_e) => onSubtaskClick(subtask)} />
+                      </RowMetaGroup>
                     </div>
                   )
                 })}
               </>
+            )}
+            {(recentDoneTasks.length > 0 || recentDoneSubtasks.length > 0) && (
+              <div className="pt-3 mt-2 border-t">
+                <button
+                  type="button"
+                  onClick={() => setShowRecentDone((v) => !v)}
+                  className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {showRecentDone ? 'Hide recent done' : 'Show recent done'}
+                </button>
+                {showRecentDone && (
+                  <div className="space-y-1.5 mt-2">
+                    {recentDoneTasks.map((task) => {
+                      const course = task.course_id ? courseMap.get(task.course_id) : null
+                      return (
+                        <div
+                          key={`done-task-${task.id}`}
+                          className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 hover:bg-muted/50 transition-colors text-left opacity-70"
+                        >
+                          <button
+                            type="button"
+                            role="checkbox"
+                            aria-checked
+                            aria-label={`Mark "${task.title}" as incomplete`}
+                            className="w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-all duration-200 bg-green-500 dark:bg-emerald-500 border-green-500 dark:border-emerald-500"
+                            onClick={() => updateTask.mutate({ id: task.id, status: 'todo' })}
+                          >
+                            <span className="animate-in fade-in-0 zoom-in-75 duration-150 flex items-center justify-center">
+                              <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                              </svg>
+                            </span>
+                          </button>
+                          <button type="button" className="flex-1 min-w-0 text-left" onClick={() => onTaskClick(task)}>
+                            <div className="flex items-center gap-3">
+                              {course && <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: course.color }} />}
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium truncate line-through text-muted-foreground">{task.title}</p>
+                                {course && <p className="text-xs text-muted-foreground">{course.name}</p>}
+                              </div>
+                            </div>
+                          </button>
+                          <RowMetaGroup>
+                            {task.estimated_hours && (
+                              <RowMetaText>{task.estimated_hours}h</RowMetaText>
+                            )}
+                            <Badge variant={priorityVariant(task.priority)} className="text-xs shrink-0">{task.priority}</Badge>
+                            <RowEditAction onClick={(_e) => onTaskClick(task)} />
+                          </RowMetaGroup>
+                        </div>
+                      )
+                    })}
+                    {recentDoneSubtasks.map((subtask) => {
+                      const parent = taskMap.get(subtask.task_id)
+                      const course = parent?.course_id ? courseMap.get(parent.course_id) : null
+                      return (
+                        <div key={`done-subtask-${subtask.id}`} className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 hover:bg-muted/50 transition-colors text-left opacity-70">
+                          <button
+                            type="button"
+                            role="checkbox"
+                            aria-checked
+                            aria-label={`Mark subtask "${subtask.title}" as incomplete`}
+                            className="w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-all duration-200 bg-green-500 dark:bg-emerald-500 border-green-500 dark:border-emerald-500"
+                            onClick={() => updateSubtask.mutate({ id: subtask.id, status: 'pending' })}
+                          >
+                            <span className="animate-in fade-in-0 zoom-in-75 duration-150 flex items-center justify-center"><svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg></span>
+                          </button>
+                          <button type="button" className="flex-1 min-w-0 text-left" onClick={() => onSubtaskClick(subtask)}>
+                            <div className="flex items-center gap-3">
+                              {course && <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: course.color }} />}
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium truncate line-through text-muted-foreground">{subtask.title}</p>
+                                <p className="text-xs text-muted-foreground truncate">{parent?.title ?? 'Subtask'}</p>
+                              </div>
+                            </div>
+                          </button>
+                          <RowMetaGroup>
+                            {parent && (
+                              <Badge variant={priorityVariant(parent.priority)} className="text-xs">
+                                {parent.priority}
+                              </Badge>
+                            )}
+                            <RowMetaText>{subtask.estimated_minutes}m</RowMetaText>
+                            <RowEditAction onClick={(_e) => onSubtaskClick(subtask)} />
+                          </RowMetaGroup>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>

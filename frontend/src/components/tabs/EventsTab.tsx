@@ -11,6 +11,9 @@ import { useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { undoableDelete } from '@/lib/undoableDelete'
 import { ListTabSkeleton } from '@/components/skeletons'
+import { InlineEmptyState } from '@/components/shared/InlineEmptyState'
+import { RowEditAction } from '@/components/shared/RowEditAction'
+import { RowMetaGroup, RowMetaText } from '@/components/shared/RowMeta'
 import type { Event } from '@/types/database'
 
 type FilterTab = 'upcoming' | 'past' | 'all'
@@ -168,16 +171,13 @@ export function EventsTab({ onEventClick, onNewEvent }: Props) {
       {filtered.length === 0 ? (
         <div className="text-center py-16 space-y-3">
           {events.length === 0 ? (
-            <>
-              <CalendarPlus className="size-10 mx-auto text-muted-foreground/40" />
-              <p className="text-muted-foreground text-sm">No events yet. Create one to get started.</p>
-              <Button size="sm" onClick={onNewEvent}>
-                <CalendarPlus className="size-4 mr-1.5" />
-                New Event
-              </Button>
-            </>
+            <div className="max-w-md mx-auto">
+              <InlineEmptyState message="No events yet." actionLabel="Create one" onAction={onNewEvent} />
+            </div>
           ) : (
-            <p className="text-muted-foreground text-sm">No events match your filters.</p>
+            <div className="max-w-md mx-auto">
+              <InlineEmptyState message="No events match your filters." />
+            </div>
           )}
         </div>
       ) : (
@@ -239,27 +239,19 @@ export function EventsTab({ onEventClick, onNewEvent }: Props) {
                 </div>
 
                 {/* Right side */}
-                <div className="flex items-center gap-2 shrink-0">
-                  <span className="text-xs text-muted-foreground">
-                    {relativeDueLabel(eventDate)}
-                  </span>
+                <RowMetaGroup>
+                  <RowMetaText>{relativeDueLabel(eventDate)}</RowMetaText>
                   {!event.all_day && (
-                    <span className="text-xs font-mono text-muted-foreground">
-                      {formatTime(event.start_time)}
-                    </span>
+                    <RowMetaText mono>{formatTime(event.start_time)}</RowMetaText>
                   )}
                   {event.all_day && (
-                    <span className="text-xs text-muted-foreground">All day</span>
+                    <RowMetaText>All day</RowMetaText>
                   )}
-                  <span className="w-px h-4 bg-border" />
-                  <button
-                    type="button"
+                  <RowEditAction
                     onClick={(e) => { e.stopPropagation(); onEventClick(event) }}
                     className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    Edit
-                  </button>
-                </div>
+                  />
+                </RowMetaGroup>
               </div>
             )
           })}

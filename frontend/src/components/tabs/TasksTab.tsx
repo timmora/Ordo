@@ -26,6 +26,9 @@ import { toast } from 'sonner'
 import type { DecomposeContext } from '@/components/tasks/TaskModal'
 import { SubtaskModal } from '@/components/tasks/SubtaskModal'
 import { ListTabSkeleton } from '@/components/skeletons'
+import { InlineEmptyState } from '@/components/shared/InlineEmptyState'
+import { RowEditAction } from '@/components/shared/RowEditAction'
+import { RowMetaGroup, RowMetaText } from '@/components/shared/RowMeta'
 import type { Task, Subtask } from '@/types/database'
 
 const restrictToVerticalWithinContainer: Modifier = ({ transform, draggingNodeRect, containerNodeRect }) => {
@@ -392,16 +395,13 @@ export function TasksTab({ onTaskClick, onNewTask, onDecompose, activeCourseFilt
       {filtered.length === 0 ? (
         <div className="text-center py-16 space-y-3">
           {tasks.length === 0 ? (
-            <>
-              <CheckSquare className="size-10 mx-auto text-muted-foreground/40" />
-              <p className="text-muted-foreground text-sm">No tasks yet. Create one to get started.</p>
-              <Button size="sm" onClick={onNewTask}>
-                <ListPlus className="size-4 mr-1.5" />
-                New Task
-              </Button>
-            </>
+            <div className="max-w-md mx-auto">
+              <InlineEmptyState message="No tasks yet." actionLabel="Create one" onAction={onNewTask} />
+            </div>
           ) : (
-            <p className="text-muted-foreground text-sm">No tasks match your filters.</p>
+            <div className="max-w-md mx-auto">
+              <InlineEmptyState message="No tasks match your filters." />
+            </div>
           )}
         </div>
       ) : (
@@ -508,10 +508,11 @@ export function TasksTab({ onTaskClick, onNewTask, onDecompose, activeCourseFilt
                   </div>
 
                   {/* Right side */}
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className={`text-xs ${overdue ? 'text-destructive' : 'text-muted-foreground'}`}>
-                      {task.due_date ? `${relativeDueLabel(task.due_date)}${task.due_time ? ` ${formatTime24to12(task.due_time)}` : ''}` : 'No due date'}
-                    </span>
+                  <RowMetaGroup>
+                    <RowMetaText className={`text-xs ${overdue ? 'text-destructive' : 'text-muted-foreground'}`}>
+                      {task.due_date ? relativeDueLabel(task.due_date) : 'No due date'}
+                    </RowMetaText>
+                    {task.due_time && <RowMetaText mono>{formatTime24to12(task.due_time)}</RowMetaText>}
                     <Badge variant={priorityVariant(task.priority)} className="text-xs">
                       {task.priority}
                     </Badge>
@@ -525,15 +526,8 @@ export function TasksTab({ onTaskClick, onNewTask, onDecompose, activeCourseFilt
                         <Sparkles className="size-3.5" />
                       </button>
                     )}
-                    <span className="w-px h-4 bg-border" />
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); onTaskClick(task) }}
-                      className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      Edit
-                    </button>
-                  </div>
+                    <RowEditAction onClick={(e) => { e.stopPropagation(); onTaskClick(task) }} className="text-xs text-muted-foreground hover:text-foreground transition-colors" />
+                  </RowMetaGroup>
                 </div>
 
                 {/* Subtasks — animated expand/collapse */}

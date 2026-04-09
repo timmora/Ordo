@@ -172,10 +172,10 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
       setError('')
       if (task) {
         await updateTask.mutateAsync({ id: task.id, ...buildPayload() })
-        toast.success(`"${title.trim()}" updated`)
+        toast.success('Task updated')
       } else {
         await createTask.mutateAsync(buildPayload())
-        toast.success(`"${title.trim()}" created`)
+        toast.success('Task created')
       }
       onClose()
     } catch (err) {
@@ -388,7 +388,7 @@ export function TaskModal({ open, onClose, task, defaultDueDate, onDecompose }: 
             <RecurrenceSelect value={recurrence} onChange={setRecurrence} />
           </div>
 
-          <div className="space-y-2 rounded-md border p-3">
+          <div className="space-y-1.5">
             <div className="flex items-center justify-between gap-2">
               <Label htmlFor="task-reminder-enabled">Reminder</Label>
               <button

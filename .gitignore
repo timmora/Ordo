@@ -32,6 +32,9 @@ frontend/dist/
 # Claude Code
 .claude/
 
+# Cursor
+.cursor/
+
 # IDE
 .vscode/
 .idea/

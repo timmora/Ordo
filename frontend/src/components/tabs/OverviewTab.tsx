@@ -9,10 +9,13 @@ import { Badge } from '@/components/ui/badge'
 import { useTasksWithSubtasks, useAllSubtasks, useUpdateSubtask } from '@/hooks/useSubtasks'
 import { useUserSettings } from '@/hooks/useUserSettings'
 import { useSchedule } from '@/hooks/useSchedule'
+import { InlineEmptyState } from '@/components/shared/InlineEmptyState'
+import { RowEditAction } from '@/components/shared/RowEditAction'
+import { RowMetaGroup, RowMetaText } from '@/components/shared/RowMeta'
 import { Sparkles, RefreshCw, CalendarSync } from 'lucide-react'
 import { OverviewTabSkeleton } from '@/components/skeletons'
 import { Skeleton } from '@/components/ui/skeleton'
-import { formatDate, todayStr, formatTime, priorityVariant } from '@/lib/dateUtils'
+import { formatDate, todayStr, formatTime, formatTime24to12, priorityVariant } from '@/lib/dateUtils'
 import type { DecomposeContext } from '@/components/tasks/TaskModal'
 import type { Subtask, Task } from '@/types/database'
 
@@ -201,16 +204,8 @@ export function OverviewTab({
           </div>
         )}
         {!summaryBusy && summaryError && !aiSummary && (
-          <div className="flex items-center justify-between py-1">
+          <div className="py-1">
             <p className="text-sm text-destructive">Could not load briefing.</p>
-            <button
-              type="button"
-              onClick={() => regenerateSummary()}
-              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <RefreshCw className="size-3" />
-              Retry
-            </button>
           </div>
         )}
         {aiSummary && !summaryBusy && (
@@ -295,9 +290,11 @@ export function OverviewTab({
               {onNewEvent && <button type="button" onClick={onNewEvent} className="text-xs text-muted-foreground hover:text-foreground transition-colors">+ Add</button>}
             </div>
             {todayEvents.length === 0 ? (
-              <p className="text-sm text-muted-foreground italic">
-                No events today.{onNewEvent && <>{' '}<button type="button" onClick={onNewEvent} className="underline underline-offset-2 hover:text-foreground transition-colors">Add one</button></>}
-              </p>
+              <InlineEmptyState
+                message="No events today."
+                actionLabel={onNewEvent ? 'Add one' : undefined}
+                onAction={onNewEvent}
+              />
             ) : (
               <div className="space-y-2">
                 {todayEvents.map((event) => {
@@ -342,9 +339,11 @@ export function OverviewTab({
               {onNewTask && <button type="button" onClick={onNewTask} className="text-xs text-muted-foreground hover:text-foreground transition-colors">+ Add</button>}
             </div>
             {todayTasks.length === 0 ? (
-              <p className="text-sm text-muted-foreground italic">
-                No tasks due today.{onNewTask && <>{' '}<button type="button" onClick={onNewTask} className="underline underline-offset-2 hover:text-foreground transition-colors">Add one</button></>}
-              </p>
+              <InlineEmptyState
+                message="No tasks due today."
+                actionLabel={onNewTask ? 'Add one' : undefined}
+                onAction={onNewTask}
+              />
             ) : (
               <div className="space-y-2">
                 {todayTasks.map((task) => {
@@ -383,7 +382,7 @@ export function OverviewTab({
                           <p className="text-xs text-muted-foreground">{course.name}</p>
                         )}
                       </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
+                      <RowMetaGroup>
                         <Badge variant={priorityVariant(task.priority)} className="text-xs">
                           {task.priority}
                         </Badge>
@@ -397,14 +396,8 @@ export function OverviewTab({
                             <Sparkles className="size-3.5" />
                           </button>
                         )}
-                        <button
-                          type="button"
-                          onClick={() => onTaskClick(task)}
-                          className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                        >
-                          Edit
-                        </button>
-                      </div>
+                        <RowEditAction onClick={(_e) => onTaskClick(task)} />
+                      </RowMetaGroup>
                     </div>
                   )
                 })}
@@ -423,9 +416,11 @@ export function OverviewTab({
               {onNewEvent && <button type="button" onClick={onNewEvent} className="text-xs text-muted-foreground hover:text-foreground transition-colors">+ Add</button>}
             </div>
             {upcomingEvents.length === 0 ? (
-              <p className="text-sm text-muted-foreground italic">
-                No upcoming events.{onNewEvent && <>{' '}<button type="button" onClick={onNewEvent} className="underline underline-offset-2 hover:text-foreground transition-colors">Add one</button></>}
-              </p>
+              <InlineEmptyState
+                message="No upcoming events."
+                actionLabel={onNewEvent ? 'Add one' : undefined}
+                onAction={onNewEvent}
+              />
             ) : (
               <div className="space-y-2">
                 {upcomingEvents.map((event) => {
@@ -449,7 +444,12 @@ export function OverviewTab({
                       </div>
                       <span className="text-xs text-muted-foreground shrink-0">
                         {formatDate(event.start_time.slice(0, 10))}
-                        {!event.all_day && ` ${formatTime(event.start_time)}`}
+                        {!event.all_day && (
+                          <>
+                            {' '}
+                            <span className="font-mono">{formatTime(event.start_time)}</span>
+                          </>
+                        )}
                       </span>
                     </div>
                   )
@@ -465,9 +465,11 @@ export function OverviewTab({
               {onNewTask && <button type="button" onClick={onNewTask} className="text-xs text-muted-foreground hover:text-foreground transition-colors">+ Add</button>}
             </div>
             {upcomingTasks.length === 0 ? (
-              <p className="text-sm text-muted-foreground italic">
-                No upcoming tasks.{onNewTask && <>{' '}<button type="button" onClick={onNewTask} className="underline underline-offset-2 hover:text-foreground transition-colors">Add one</button></>}
-              </p>
+              <InlineEmptyState
+                message="No upcoming tasks."
+                actionLabel={onNewTask ? 'Add one' : undefined}
+                onAction={onNewTask}
+              />
             ) : (
               <div className="space-y-2">
                 {upcomingTasks.map((task) => {
@@ -504,10 +506,11 @@ export function OverviewTab({
                           <p className="text-xs text-muted-foreground">{course.name}</p>
                         )}
                       </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
+                      <RowMetaGroup>
                         <span className="text-xs text-muted-foreground">
                           {task.due_date ? formatDate(task.due_date) : 'No due date'}
                         </span>
+                        {task.due_time && <RowMetaText mono>{formatTime24to12(task.due_time)}</RowMetaText>}
                         <Badge variant={priorityVariant(task.priority)} className="text-xs">
                           {task.priority}
                         </Badge>
@@ -521,14 +524,8 @@ export function OverviewTab({
                             <Sparkles className="size-3.5" />
                           </button>
                         )}
-                        <button
-                          type="button"
-                          onClick={() => onTaskClick(task)}
-                          className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                        >
-                          Edit
-                        </button>
-                      </div>
+                        <RowEditAction onClick={(_e) => onTaskClick(task)} />
+                      </RowMetaGroup>
                     </div>
                   )
                 })}
@@ -554,9 +551,11 @@ export function OverviewTab({
               )}
             </div>
             {unscheduled.length === 0 && unscheduledSubtasks.length === 0 ? (
-              <p className="text-sm text-muted-foreground italic">
-                No unscheduled tasks.{onNewTodo && <>{' '}<button type="button" onClick={onNewTodo} className="underline underline-offset-2 hover:text-foreground transition-colors">Add one</button></>}
-              </p>
+              <InlineEmptyState
+                message="No unscheduled tasks."
+                actionLabel={onNewTodo ? 'Add one' : undefined}
+                onAction={onNewTodo}
+              />
             ) : (
               <div className="space-y-2">
                 {unscheduled.map((task) => {
@@ -593,7 +592,7 @@ export function OverviewTab({
                         </p>
                         {course && <p className="text-xs text-muted-foreground">{course.name}</p>}
                       </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
+                      <RowMetaGroup>
                         <Badge variant={priorityVariant(task.priority)} className="text-xs">
                           {task.priority}
                         </Badge>
@@ -607,14 +606,8 @@ export function OverviewTab({
                             <Sparkles className="size-3.5" />
                           </button>
                         )}
-                        <button
-                          type="button"
-                          onClick={() => onTaskClick(task)}
-                          className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                        >
-                          Edit
-                        </button>
-                      </div>
+                        <RowEditAction onClick={(_e) => onTaskClick(task)} />
+                      </RowMetaGroup>
                     </div>
                   )
                 })}
@@ -650,23 +643,15 @@ export function OverviewTab({
                           {course ? `${course.name} · ` : ''}{parent?.title ?? 'Subtask'}
                         </p>
                       </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
+                      <RowMetaGroup>
                         {parent && (
                           <Badge variant={priorityVariant(parent.priority)} className="text-xs">
                             {parent.priority}
                           </Badge>
                         )}
-                        <span className="text-xs text-muted-foreground">{subtask.estimated_minutes}m</span>
-                        {onSubtaskClick && (
-                          <button
-                            type="button"
-                            onClick={() => onSubtaskClick(subtask)}
-                            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                          >
-                            Edit
-                          </button>
-                        )}
-                      </div>
+                        <RowMetaText>{subtask.estimated_minutes}m</RowMetaText>
+                        {onSubtaskClick && <RowEditAction onClick={(_e) => onSubtaskClick(subtask)} />}
+                      </RowMetaGroup>
                     </div>
                   )
                 })}

@@ -133,10 +133,10 @@ export function EventModal({ open, onClose, event, defaultStart, defaultEnd, def
       setError('')
       if (event) {
         await updateEvent.mutateAsync({ id: event.id, ...buildPayload() })
-        toast.success(`"${title.trim()}" updated`)
+        toast.success('Event updated')
       } else {
         await createEvent.mutateAsync(buildPayload())
-        toast.success(`"${title.trim()}" created`)
+        toast.success('Event created')
       }
       onClose()
     } catch (err) {
@@ -268,15 +268,29 @@ export function EventModal({ open, onClose, event, defaultStart, defaultEnd, def
             )}
           </div>
 
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="allday"
-              checked={allDay}
-              onChange={(e) => setAllDay(e.target.checked)}
-              className="rounded"
-            />
+          <div className="flex items-center justify-between gap-2">
             <Label htmlFor="allday">All day</Label>
+            <button
+              type="button"
+              id="allday"
+              role="checkbox"
+              aria-checked={allDay}
+              aria-label="Toggle all day event"
+              onClick={() => setAllDay((v) => !v)}
+              className={`w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-all duration-200 ${
+                allDay
+                  ? 'bg-green-500 dark:bg-emerald-500 border-green-500 dark:border-emerald-500'
+                  : 'border-muted-foreground hover:border-green-500 dark:hover:border-emerald-400'
+              }`}
+            >
+              {allDay && (
+                <span className="animate-in fade-in-0 zoom-in-75 duration-150 flex items-center justify-center">
+                  <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                </span>
+              )}
+            </button>
           </div>
 
           {allDay ? (
@@ -422,7 +436,7 @@ export function EventModal({ open, onClose, event, defaultStart, defaultEnd, def
             <RecurrenceSelect value={recurrence} onChange={setRecurrence} />
           </div>
 
-          <div className="space-y-2 rounded-md border p-3">
+          <div className="space-y-1.5">
             <div className="flex items-center justify-between gap-2">
               <Label htmlFor="event-reminder-enabled">Reminder</Label>
               <button

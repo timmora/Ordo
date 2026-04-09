@@ -44,7 +44,7 @@ export function SubtaskModal({ open, onClose, subtask }: Props) {
       },
       {
         onSuccess: () => {
-          toast.success('Subtask updated')
+          toast.success('Subtask saved')
           onClose()
         },
       },

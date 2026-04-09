@@ -44,10 +44,10 @@ export function TodoModal({ open, onClose }: Props) {
         due_date: null,
         status: 'todo',
       })
-      toast.success(`"${title.trim()}" added`)
+      toast.success('To-do created')
       onClose()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save')
+      toast.error(err instanceof Error ? err.message : 'Could not save to-do')
     }
   }
 
