@@ -18,7 +18,7 @@ Ordo is where I wanted to connect all three. You add a task, AI decomposes it in
 
 ## What Ordo Does
 
-**AI Task Decomposition** — Describe an assignment and Claude breaks it into ordered subtasks with time estimates, then the scheduler places them into open slots on your calendar based on your daily capacity and preferred study hours.
+**AI Task Decomposition** — Describe an assignment and AI breaks it into ordered subtasks with time estimates, then the scheduler places them into open slots on your calendar based on your daily capacity and preferred study hours.
 
 **Focus Timer** — Pomodoro timer linked to specific tasks and subtasks. Tracks per-subtask focus time against estimates so you can see if you're on pace. Logs daily sessions and maintains a streak counter.
 
