@@ -10,9 +10,9 @@
 
 ## Why I Built Ordo
 
-Ordo is something I've been thinking about since my freshman year of college. The shift from high school to college was a big one, and one of the areas where I struggled a great deal was planning. I suddenly had a lot on my plate and navigating this was a challenge that took long to really get through. I tried all kinds of things, from Google Calendar, to to-do list apps, to focus timer apps and even creating my own environment in Notion. However, it always felt like I was missing something. These apps were either too complex to navigate, didn't give me everything I needed in one place, or required paid plans to get the full experience.
+Ordo is something I've been thinking about since my freshman year of college. The shift from high school to college was a big one, and one of the areas where I struggled most was planning. Things piled up fast, and figuring out a way to work through it all took a lot longer than I expected. I tried all kinds of things, from Google Calendar, to to-do list apps, to focus timer apps and even creating my own environment in Notion. However, it always felt like I was missing something. These apps were either too complex to get a hold of, didn't give me everything I needed in one place, or required paid plans to get the full experience.
 
-I wanted a single tool that handled the full student workflow: not just a to-do list, but something that understands *how long* tasks take, *when* you're free, and *how* you're actually doing. Existing apps handled pieces of this, but none of them really close the loop between planning, execution, and reflection.
+I wanted a single tool that handled the full student workflow: not just a to-do list, but something that understands *how long* tasks take, *when* you're free, and *how* you're actually doing. Existing apps handled pieces of this, but none of them really bring planning, execution, and reflection together.
 
 Ordo is where I wanted to connect all three. You add a task, AI decomposes it into subtasks and slots them into your calendar around classes and events, and you work through them with a focus timer. At the end of the day, a journal captures how it went, building data you can actually learn from.
 
