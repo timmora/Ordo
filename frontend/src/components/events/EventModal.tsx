@@ -461,11 +461,14 @@ export function EventModal({ open, onClose, event, defaultStart, defaultEnd, def
               </button>
             </div>
             {reminderEnabled && (
-              <div className="space-y-1.5">
-                <Label>Remind me</Label>
-                <DropdownMenu>
+              <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="outline" className="w-full justify-between font-normal">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full justify-between font-normal"
+                      aria-label="Reminder lead time"
+                    >
                       {{
                         5: '5 minutes before',
                         10: '10 minutes before',
@@ -490,7 +493,6 @@ export function EventModal({ open, onClose, event, defaultStart, defaultEnd, def
                     </DropdownMenuGroup>
                   </DropdownMenuContent>
                 </DropdownMenu>
-              </div>
             )}
           </div>
 
